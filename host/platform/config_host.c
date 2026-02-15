@@ -7,6 +7,7 @@
 #include <strings.h>
 #include <errno.h>
 #include <time.h>
+#include <stdbool.h>
 #include "esp_log.h"
 #include "cJSON.h"
 

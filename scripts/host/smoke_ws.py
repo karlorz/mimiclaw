@@ -18,7 +18,11 @@ async def run(url: str, chat_id: str, content: str, timeout_s: float) -> int:
         await ws.send(json.dumps(payload))
 
         while True:
-            raw = await asyncio.wait_for(ws.recv(), timeout=timeout_s)
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=timeout_s)
+            except asyncio.TimeoutError:
+                print(f"timeout waiting for response ({timeout_s:.1f}s)", file=sys.stderr)
+                return 1
             msg = json.loads(raw)
             if not isinstance(msg, dict):
                 continue
@@ -47,7 +51,7 @@ def main() -> int:
     try:
         return asyncio.run(run(args.url, args.chat_id, args.content, args.timeout))
     except Exception as exc:
-        print(f"smoke ws failed: {exc}", file=sys.stderr)
+        print(f"smoke ws failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
 

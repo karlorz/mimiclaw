@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build-host}"
 BIN="${BUILD_DIR}/mimiclaw-host"
+PYTHON="${PYTHON:-python3}"
 
 if [[ ! -x "${BIN}" ]]; then
   echo "host binary not found: ${BIN}" >&2
@@ -11,14 +12,14 @@ if [[ ! -x "${BIN}" ]]; then
   exit 1
 fi
 
-if ! python3 -c 'import websockets' >/dev/null 2>&1; then
+if ! "${PYTHON}" -c 'import websockets' >/dev/null 2>&1; then
   echo "python package 'websockets' not installed" >&2
-  echo "install: python3 -m pip install websockets" >&2
+  echo "install: ${PYTHON} -m pip install websockets" >&2
   exit 2
 fi
 
 pick_port() {
-  python3 - <<'PY'
+  "${PYTHON}" - <<'PY'
 import socket
 s = socket.socket()
 s.bind(("127.0.0.1", 0))
@@ -30,7 +31,7 @@ PY
 wait_port() {
   local host="$1"
   local port="$2"
-  python3 - "$host" "$port" <<'PY'
+  "${PYTHON}" - "$host" "$port" <<'PY'
 import socket
 import sys
 import time
@@ -103,11 +104,15 @@ if ! wait_port "${WS_BIND}" "${WS_PORT}"; then
   exit 1
 fi
 
-python3 "${ROOT_DIR}/scripts/host/smoke_ws.py" \
+if ! "${PYTHON}" "${ROOT_DIR}/scripts/host/smoke_ws.py" \
   --url "ws://${WS_BIND}:${WS_PORT}" \
   --chat-id "ci_smoke" \
   --content "hello from smoke" \
-  --timeout 20
+  --timeout 20; then
+  echo "websocket smoke check failed; host log tail:" >&2
+  tail -n 200 "${LOG_PATH}" >&2 || true
+  exit 1
+fi
 
 if [[ ! -f "${STATE_ROOT}/sessions/tg_ci_smoke.jsonl" ]]; then
   echo "expected session file missing: ${STATE_ROOT}/sessions/tg_ci_smoke.jsonl" >&2

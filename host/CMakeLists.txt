@@ -6,6 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 find_package(Threads REQUIRED)
 find_package(CURL REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(LWS REQUIRED libwebsockets)
@@ -44,6 +45,7 @@ target_include_directories(mimiclaw-host PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/compat
     ${LWS_INCLUDE_DIRS}
     ${CJSON_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
 )
 
 target_compile_options(mimiclaw-host PRIVATE
@@ -59,6 +61,8 @@ target_link_directories(mimiclaw-host PRIVATE
 target_link_libraries(mimiclaw-host PRIVATE
     Threads::Threads
     CURL::libcurl
+    OpenSSL::SSL
+    OpenSSL::Crypto
     ${LWS_LIBRARIES}
     ${CJSON_LIBRARIES}
 )

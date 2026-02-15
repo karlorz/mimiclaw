@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <libwebsockets.h>
+#include "esp_err.h"
 #include "esp_log.h"
 #include "cJSON.h"
 
@@ -147,6 +148,18 @@ static int ws_callback(struct lws *wsi,
             break;
         }
 
+        case LWS_CALLBACK_EVENT_WAIT_CANCELLED: {
+            /* Wake pending writers from the libwebsockets service thread. */
+            pthread_mutex_lock(&s_clients_mu);
+            for (int i = 0; i < MIMI_WS_MAX_CLIENTS; i++) {
+                if (s_clients[i].active && s_clients[i].pending) {
+                    lws_callback_on_writable(s_clients[i].wsi);
+                }
+            }
+            pthread_mutex_unlock(&s_clients_mu);
+            break;
+        }
+
         case LWS_CALLBACK_SERVER_WRITEABLE: {
             pthread_mutex_lock(&s_clients_mu);
             ws_client_t *client = find_client_by_wsi(wsi);
@@ -159,6 +172,8 @@ static int ws_callback(struct lws *wsi,
                     free(buf);
                     if (n < 0) {
                         ESP_LOGW(TAG, "lws_write failed for %s", client->chat_id);
+                    } else {
+                        ESP_LOGI(TAG, "sent %d bytes to %s", n, client->chat_id);
                     }
                 }
                 free(client->pending);
@@ -255,7 +270,7 @@ mimi_err_t ws_server_send(const char *chat_id, const char *text)
     free(client->pending);
     client->pending = json;
 
-    lws_callback_on_writable(client->wsi);
+    ESP_LOGI(TAG, "queue outbound to %s (%d bytes)", chat_id, (int)strlen(json));
     lws_cancel_service(s_context);
 
     pthread_mutex_unlock(&s_clients_mu);

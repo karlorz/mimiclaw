@@ -199,6 +199,9 @@ static void agent_loop_task(void *arg)
             strncpy(out.chat_id, msg.chat_id, sizeof(out.chat_id) - 1);
             out.content = strdup("Sorry, I encountered an error.");
             if (out.content) {
+                /* Persist fallback assistant text so failed turns are still recoverable. */
+                session_append(msg.chat_id, "user", msg.content);
+                session_append(msg.chat_id, "assistant", out.content);
                 message_bus_push_outbound(&out);
             }
         }

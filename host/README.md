@@ -103,7 +103,9 @@ Or with overrides:
 Install Python test dependency:
 
 ```bash
-python3 -m pip install websockets
+python3 -m venv .tmp/host-venv
+. .tmp/host-venv/bin/activate
+python -m pip install websockets
 ```
 
 Run smoke:
