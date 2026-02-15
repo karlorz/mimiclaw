@@ -1,4 +1,4 @@
-name: Host Build
+name: Host Build & Smoke
 
 on:
   push:
@@ -21,20 +21,13 @@ jobs:
       - name: Install deps (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential cmake pkg-config \
-            libcurl4-openssl-dev libwebsockets-dev libcjson-dev
+          ./scripts/host/install-deps-ubuntu.sh
 
       - name: Install deps (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          brew install cmake pkg-config curl libwebsockets cjson
+          ./scripts/host/install-deps-macos.sh
 
-      - name: Configure host build
+      - name: Build and smoke (shared repo flow)
         run: |
-          cmake -S host -B build-host
-
-      - name: Build host target
-        run: |
-          cmake --build build-host --parallel
+          BUILD_DIR=build-host ./scripts/host/ci.sh

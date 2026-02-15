@@ -18,23 +18,21 @@ Out of scope in this phase:
 ### macOS (Homebrew)
 
 ```bash
-brew install cmake pkg-config curl libwebsockets cjson
+./scripts/host/install-deps-macos.sh
 ```
 
 ### Ubuntu/Debian
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y \
-  build-essential cmake pkg-config \
-  libcurl4-openssl-dev libwebsockets-dev libcjson-dev
+./scripts/host/install-deps-ubuntu.sh
 ```
 
 ## Build
 
 ```bash
-cmake -S /Users/karlchow/Desktop/code/mimiclaw/host -B /Users/karlchow/Desktop/code/mimiclaw/build-host
-cmake --build /Users/karlchow/Desktop/code/mimiclaw/build-host
+./scripts/host/build.sh
+# or
+make host-build
 ```
 
 Binary:
@@ -59,6 +57,9 @@ Example:
   "timezone": "PST8PDT,M3.2.0,M11.1.0"
 }
 ```
+
+You can also start from:
+- `host/config.json.example`
 
 Environment overrides:
 - `MIMI_API_KEY`
@@ -95,6 +96,30 @@ Or with overrides:
   --ws-bind 127.0.0.1 \
   --ws-port 18789 \
   --state-root ~/.mimiclaw
+```
+
+## Smoke Test (Reusable for CI)
+
+Install Python test dependency:
+
+```bash
+python3 -m pip install websockets
+```
+
+Run smoke:
+
+```bash
+./scripts/host/smoke.sh
+# or
+make host-smoke
+```
+
+Run CI-equivalent flow locally (build + smoke):
+
+```bash
+./scripts/host/ci.sh
+# or
+make host-ci
 ```
 
 ## WebSocket Protocol (phase-1)

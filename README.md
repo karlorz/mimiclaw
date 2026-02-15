@@ -133,14 +133,27 @@ MimiClaw now includes a native host daemon entrypoint under `host/` with shared 
 Build:
 
 ```bash
-cmake -S /Users/karlchow/Desktop/code/mimiclaw/host -B /Users/karlchow/Desktop/code/mimiclaw/build-host
-cmake --build /Users/karlchow/Desktop/code/mimiclaw/build-host
+./scripts/host/build.sh
+# or
+make host-build
 ```
 
 Run:
 
 ```bash
 /Users/karlchow/Desktop/code/mimiclaw/build-host/mimiclaw-host
+```
+
+Smoke test:
+
+```bash
+python3 -m pip install websockets
+./scripts/host/smoke.sh
+# or
+make host-smoke
+
+# CI-equivalent flow
+make host-ci
 ```
 
 Phase-1 host limitations:

@@ -1,0 +1,10 @@
+{
+  "api_key": "",
+  "model": "claude-opus-4-5",
+  "model_provider": "anthropic",
+  "search_key": "",
+  "ws_bind": "127.0.0.1",
+  "ws_port": 18789,
+  "state_root": "~/.mimiclaw",
+  "timezone": "PST8PDT,M3.2.0,M11.1.0"
+}

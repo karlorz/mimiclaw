@@ -3,6 +3,7 @@ build/
 build-host/
 dist/
 tmp/
+.tmp/
 releases/
 
 # ESP-IDF
