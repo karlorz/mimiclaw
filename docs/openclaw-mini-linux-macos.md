@@ -1,301 +1,183 @@
-# OpenClaw Minimal Profile for Linux/macOS
+# OpenClaw Minimal Design for Linux/macOS
 
-> A source-backed deep dive into running a minimal OpenClaw deployment on Linux/macOS, with explicit mappings to MimiClaw embedded concepts.
+## Purpose and Scope
+This document defines a minimal OpenClaw profile for Linux/macOS that preserves the OpenClaw runtime model (Node gateway) while reducing deployment and operational complexity. It is intended as a design reference for MimiClaw contributors who want OpenClaw-style behavior on desktop/server environments without adopting full platform breadth.
 
----
+Scope limits:
+- Keep OpenClaw runtime architecture (do not reimplement in C).
+- Optimize for single-user, single-agent, single-channel operation.
+- Keep only the control-plane pieces required for message-in, agent execution, tool use, and message-out.
 
-## 1. Purpose and Scope
+## What “Minimal OpenClaw” Means
+Minimal OpenClaw in this repo means the following canonical target profile:
+- Single gateway process.
+- Single agent (`main`) and one workspace.
+- One enabled ingress channel at a time.
+- Token auth enabled.
+- Persistent state dir enabled.
+- Optional browser disabled by default.
+- No cron and no multi-agent by default.
 
-This document defines the **minimal viable OpenClaw configuration** for Linux/macOS that mirrors MimiClaw's embedded design constraints. Use this as a reference when:
+This profile is intentionally conservative so it can be reasoned about like an embedded system: deterministic scope, explicit state paths, and low operational surface area.
 
-- Testing MimiClaw behavior against a desktop OpenClaw instance
-- Understanding which OpenClaw features map to embedded equivalents
-- Validating agent logic before flashing to ESP32-S3
+## Smallest Viable Runtime Components
+The minimal runtime still requires these components:
+- Gateway control plane: receives channel events, authenticates requests, routes to sessions/agents/tools.
+- Agent runtime: one primary agent identity (`main`) bound to one workspace.
+- One channel adapter: exactly one ingress channel enabled at a time.
+- Model provider configuration: at least one provider/API key configured.
+- Persistent state/workspace paths: state directory and workspace directory on disk.
 
-This document does NOT cover OpenClaw's full feature set. For complete documentation, see the [OpenClaw repository](https://github.com/openclaw/openclaw).
+Core control-plane concept to preserve:
+- OpenClaw Gateway orchestrates channels, sessions, agents, and tools.
 
----
+Everything else is optional in the mini profile and starts disabled.
 
-## 2. What "Minimal OpenClaw" Means
+## Minimal Config Baseline (from official examples)
+Official docs identify `~/.openclaw/openclaw.json` as the primary configuration file (JSON5).
 
-A minimal OpenClaw deployment strips away features that exceed embedded hardware capabilities:
-
-| Full OpenClaw | Minimal Profile | Rationale |
-|---------------|-----------------|-----------|
-| Multi-agent routing | Single agent | ESP32 memory limits |
-| Cron scheduler | Disabled | No persistent timer service on embedded |
-| Voice/talk channels | Disabled | No audio I/O on base ESP32-S3 |
-| Live canvas | Disabled | No display output |
-| Browser automation | Disabled by default | Resource-intensive |
-| Multiple simultaneous channels | One channel at a time | Memory constraints |
-
-The minimal profile targets **functional parity with MimiClaw**, not feature completeness.
-
----
-
-## 3. Smallest Viable Runtime Components
-
-A minimal OpenClaw deployment requires exactly:
-
-| Component | Description | Required |
-|-----------|-------------|----------|
-| Gateway process | Core control plane | YES |
-| Single agent (`main`) | Executes ReAct loop | YES |
-| One workspace | State directory | YES |
-| One ingress channel | Telegram OR WebSocket | YES |
-| Token auth | API key validation | YES |
-| Persistent state dir | Session/memory storage | YES |
-
-**Disabled by default in mini profile:**
-- Browser node
-- Cron service
-- Multi-agent orchestration
-- Additional channels beyond primary
-
----
-
-## 4. Minimal Config Baseline (from official examples)
-
-### Installation
-
-```bash
-curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash
-```
-
-### Start Gateway
-
-```bash
-openclaw gateway --port 18789
-```
-
-### Config Location
-
-```
-~/.openclaw/openclaw.json    # JSON5 format
-```
-
-### Minimal Config Template
+Absolute-minimum example pattern (from OpenClaw docs):
 
 ```json5
 {
-  // Single agent, single workspace
-  "agents": {
-    "main": {
-      "workspace": "~/openclaw-workspace",
-      "model": "claude-opus-4-5",
-      "provider": "anthropic"
-    }
-  },
-
-  // One channel only
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "${TELEGRAM_BOT_TOKEN}"
-    }
-  },
-
-  // Disable non-essential features
-  "cron": { "enabled": false },
-  "browser": { "enabled": false },
-  "multiAgent": { "enabled": false },
-
-  // Auth
-  "auth": {
-    "tokenAuth": true
-  },
-
-  // State persistence
-  "state": {
-    "dir": "~/.openclaw/state",
-    "persistent": true
-  }
+  agent: { workspace: "~/.openclaw/workspace" },
+  channels: { whatsapp: { allowFrom: ["+15555550123"] } },
 }
 ```
 
----
+Mini-profile baseline used in this repo (same intent, explicit gateway constraints):
 
-## 5. Linux/macOS Boot Paths
+```json5
+{
+  gateway: {
+    mode: "local",
+    port: 18789,
+    auth: "token",
+  },
+  agents: {
+    defaults: {
+      workspace: "~/.openclaw/workspace",
+    },
+    list: [{ id: "main" }],
+  },
+  channels: {
+    // Enable only one ingress channel at a time in the mini profile.
+    whatsapp: { allowFrom: ["+15555550123"] },
+  },
+  browser: { enabled: false },
+  cron: { enabled: false },
+}
+```
 
-### Linux
+For persistence, keep state/workspace rooted on disk (for example with `OPENCLAW_STATE_DIR` and workspace path in config) so gateway restarts do not lose session data.
+
+## Linux/macOS Boot Paths
+Primary install path (macOS/Linux/WSL):
 
 ```bash
-# Install
 curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash
-
-# Start gateway (foreground)
-openclaw gateway --port 18789
-
-# Start gateway (background with systemd)
-sudo systemctl enable openclaw-gateway
-sudo systemctl start openclaw-gateway
-
-# Verify
-curl http://localhost:18789/health
 ```
 
-### macOS
+Local minimal run path:
 
 ```bash
-# Install
+openclaw gateway --port 18789
+```
+
+Optional guided setup path:
+
+```bash
+openclaw onboard --install-daemon
+```
+
+Operational recommendation for mini profile:
+- Start with local gateway mode.
+- Confirm only one ingress channel is enabled.
+- Confirm token auth is enabled before exposing beyond localhost/LAN.
+
+## Feature Cut List for Mini Profile
+Default cuts for this profile:
+- Multi-agent routing: disabled.
+- Cron service: disabled.
+- Voice wake / talk mode: disabled.
+- Live canvas / UI extras: disabled.
+- Extra channels beyond one ingress channel: disabled.
+- Browser node: disabled by default; enable only when browser automation is explicitly needed.
+
+Keep these enabled:
+- Gateway.
+- One agent.
+- One ingress channel.
+- Tool calling for required tasks.
+- Persistent state and workspace.
+
+## Mapping to MimiClaw Concepts
+| OpenClaw concept | MimiClaw equivalent |
+| --- | --- |
+| Gateway control plane | Task orchestration in `app_main()` |
+| Agent loop/tool cycle | `agent/agent_loop.c` |
+| Workspace/state dirs | SPIFFS + NVS split |
+| Channel adapters | `telegram/` + `gateway/ws_server.c` |
+| Provider abstraction | `llm/llm_proxy.c` |
+
+## Migration Risks and Guardrails
+Risks:
+- Over-enabling channels/features too early increases failure surface and debugging noise.
+- Weak auth configuration can expose a gateway that has tool execution capability.
+- Non-persistent state paths can silently reset sessions/memory between restarts.
+- Enabling browser/voice/canvas before baseline stability introduces difficult cross-component issues.
+
+Guardrails:
+- Keep one ingress channel until base flow is stable.
+- Require token auth in all non-local test environments.
+- Pin and document state/workspace paths before onboarding users.
+- Add one optional subsystem at a time and validate with controlled smoke tests.
+
+## Reference Commands
+Installer:
+
+```bash
 curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash
-
-# Start gateway (foreground)
-openclaw gateway --port 18789
-
-# Start gateway (background with launchd)
-# Create ~/Library/LaunchAgents/com.openclaw.gateway.plist
-
-# Verify
-curl http://localhost:18789/health
 ```
 
-### Environment Variables
+Start local gateway:
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-api03-xxxxx"
-export TELEGRAM_BOT_TOKEN="123456:ABC-DEF..."
-export OPENCLAW_STATE_DIR="~/.openclaw/state"
+openclaw gateway --port 18789
 ```
 
----
-
-## 6. Feature Cut List for Mini Profile
-
-Features explicitly **disabled** in the minimal profile:
-
-| Feature | Config Key | Default | Mini Profile |
-|---------|------------|---------|--------------|
-| Multi-agent routing | `multiAgent.enabled` | true | **false** |
-| Cron scheduler | `cron.enabled` | true | **false** |
-| Voice channel | `channels.voice.enabled` | false | **false** |
-| Live canvas | `canvas.enabled` | false | **false** |
-| Browser automation | `browser.enabled` | true | **false** |
-| Extra channels | `channels.*.enabled` | varies | **one only** |
-| Streaming responses | `streaming` | true | **false** (match MimiClaw) |
-
----
-
-## 7. Mapping to MimiClaw Concepts
-
-| OpenClaw Concept | MimiClaw Equivalent | Notes |
-|------------------|---------------------|-------|
-| Gateway control plane | Task orchestration in `app_main()` | `main/mimi.c:83-146` |
-| Agent loop/tool cycle | `agent/agent_loop.c` | ReAct loop, max 10 iterations |
-| Workspace/state dirs | SPIFFS + NVS split | `/spiffs/` for files, NVS for config |
-| Channel adapters | `telegram/` + `gateway/ws_server.c` | Telegram poller + WebSocket server |
-| Provider abstraction | `llm/llm_proxy.c` | Anthropic/OpenAI dual-provider support |
-| Tool registry | `tools/tool_registry.c` | JSON schema builder, dispatch by name |
-| Session storage | `memory/session_mgr.c` | JSONL files per chat_id |
-| Long-term memory | `memory/memory_store.c` | MEMORY.md + daily notes |
-| System prompt | `agent/context_builder.c` | SOUL.md + USER.md + memory + tools |
-| Config management | `mimi_config.h` + NVS | Build-time defaults + runtime CLI override |
-
-### Architecture Correspondence
-
-```
-OpenClaw Gateway          MimiClaw ESP32-S3
-─────────────────         ─────────────────
-Gateway Process     ↔     app_main() orchestration
-Agent Manager       ↔     agent_loop task (Core 1)
-Channel Manager     ↔     telegram_bot + ws_server
-Tool Executor       ↔     tool_registry_execute()
-State Store         ↔     SPIFFS filesystem
-Config Service      ↔     mimi_config.h + NVS
-Message Queue       ↔     message_bus (FreeRTOS queues)
-```
-
----
-
-## 8. Migration Risks and Guardrails
-
-### Memory Constraints
-
-| Constraint | OpenClaw | MimiClaw | Risk |
-|------------|----------|----------|------|
-| Max tokens | 128K+ | 4096 | Token budget overflow |
-| Session history | Unlimited | 20 messages | Context truncation |
-| Concurrent requests | Many | 1 | No parallelism |
-| Tool output size | Large | 8 KB | Truncation required |
-
-### Behavioral Differences
-
-1. **Streaming**: OpenClaw streams tokens; MimiClaw uses non-streaming JSON
-2. **Tool timeout**: OpenClaw has configurable timeouts; MimiClaw uses fixed 120s HTTP timeout
-3. **Error recovery**: OpenClaw has retry logic; MimiClaw fails fast
-4. **Multi-turn limit**: Both default to 10 iterations, but OpenClaw is configurable
-
-### Guardrails for Parity Testing
-
-- Set `max_tokens: 4096` in OpenClaw config to match MimiClaw
-- Limit session history to 20 messages
-- Disable streaming in OpenClaw for behavior parity
-- Use identical system prompts (SOUL.md, USER.md content)
-
----
-
-## 9. Reference Commands
-
-### OpenClaw CLI
+Start with verbose logs:
 
 ```bash
-# Install
-curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash
-
-# Start gateway
-openclaw gateway --port 18789
-
-# Check status
-openclaw status
-
-# View logs
-openclaw logs --follow
-
-# Stop gateway
-openclaw stop
+openclaw gateway --port 18789 --verbose
 ```
 
-### MimiClaw Serial CLI (for comparison)
+Force replace existing listener:
 
-```
-mimi> config_show              # Show all config
-mimi> set_model_provider anthropic
-mimi> set_api_key sk-ant-...
-mimi> set_model claude-opus-4-5
-mimi> wifi_status
-mimi> heap_info
-mimi> restart
+```bash
+openclaw gateway --force
 ```
 
-### API Endpoints
+Optional onboarding:
 
-| Endpoint | OpenClaw | MimiClaw |
-|----------|----------|----------|
-| Health | `GET /health` | N/A (no HTTP server) |
-| WebSocket | `ws://localhost:18789/ws` | `ws://<esp-ip>:18789` |
-| Telegram | Via channel config | Via `telegram_bot.c` |
+```bash
+openclaw onboard --install-daemon
+```
 
----
+## Sources
+Local files:
+- `README.md`
+- `docs/ARCHITECTURE.md`
+- `docs/TODO.md`
+- `main/mimi.c`
+- `main/agent/agent_loop.c`
+- `main/llm/llm_proxy.c`
 
-## 10. Sources
-
-### Local Files (MimiClaw)
-
-- `main/mimi.c` — Entry point, startup sequence
-- `main/mimi_config.h` — All compile-time constants
-- `main/cli/serial_cli.c` — CLI command definitions
-- `main/llm/llm_proxy.c` — LLM provider abstraction
-- `main/agent/agent_loop.c` — ReAct loop implementation
-- `main/tools/tool_registry.c` — Tool registration and dispatch
-- `main/memory/session_mgr.c` — Session storage
-- `main/memory/memory_store.c` — Long-term memory
-- `docs/ARCHITECTURE.md` — System design documentation
-
-### OpenClaw References
-
-- [OpenClaw Installer](https://github.com/openclaw/openclaw/blob/main/docs/install/installer.md)
-- [Gateway Documentation](https://github.com/openclaw/openclaw/blob/main/docs/gateway/index.md)
-- [Configuration Examples](https://github.com/openclaw/openclaw/blob/main/docs/gateway/configuration-examples.md)
-- [Sandboxing](https://github.com/openclaw/openclaw/blob/main/docs/gateway/sandboxing.md)
-- [FAQ](https://github.com/openclaw/openclaw/blob/main/docs/help/faq.md)
-- [README](https://github.com/openclaw/openclaw/blob/main/README.md)
+Context7:
+- `/openclaw/openclaw`
+- `https://github.com/openclaw/openclaw/blob/main/docs/install/installer.md`
+- `https://github.com/openclaw/openclaw/blob/main/docs/gateway/index.md`
+- `https://github.com/openclaw/openclaw/blob/main/docs/help/faq.md`
+- `https://github.com/openclaw/openclaw/blob/main/docs/gateway/configuration-examples.md`
+- `https://github.com/openclaw/openclaw/blob/main/docs/gateway/sandboxing.md`
+- `https://github.com/openclaw/openclaw/blob/main/README.md`
