@@ -1,6 +1,6 @@
 #pragma once
 
-#include "esp_err.h"
+#include "platform/platform_types.h"
 
 /**
  * Initialize and start the WebSocket server on MIMI_WS_PORT.
@@ -10,16 +10,16 @@
  *   Inbound:  {"type":"message","content":"hello","chat_id":"ws_client1"}
  *   Outbound: {"type":"response","content":"Hi!","chat_id":"ws_client1"}
  */
-esp_err_t ws_server_start(void);
+mimi_err_t ws_server_start(void);
 
 /**
  * Send a text message to a specific WebSocket client by chat_id.
  * @param chat_id  Client identifier (assigned on connection)
  * @param text     Message text
  */
-esp_err_t ws_server_send(const char *chat_id, const char *text);
+mimi_err_t ws_server_send(const char *chat_id, const char *text);
 
 /**
  * Stop the WebSocket server.
  */
-esp_err_t ws_server_stop(void);
+mimi_err_t ws_server_stop(void);

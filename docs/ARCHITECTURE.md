@@ -102,7 +102,12 @@ main/
 │
 ├── bus/
 │   ├── message_bus.h       mimi_msg_t struct, queue API
-│   └── message_bus.c       Two FreeRTOS queues: inbound + outbound
+│   └── message_bus_esp.c   Two FreeRTOS queues: inbound + outbound (ESP impl)
+│
+├── platform/
+│   ├── platform_kv.h/.c    Runtime key-value abstraction (NVS on ESP)
+│   ├── platform_http.h/.c  HTTP abstraction (direct + proxy)
+│   └── platform_paths.h/.c Virtual /spiffs path mapping abstraction
 │
 ├── wifi/
 │   ├── wifi_manager.h      WiFi STA lifecycle API
@@ -387,7 +392,7 @@ The CLI provides debug and maintenance commands only. All configuration is done 
 | `agent/memory.py`           | `memory/memory_store.c`        | MEMORY.md + daily notes      |
 | `session/manager.py`        | `memory/session_mgr.c`         | JSONL per chat, ring buffer  |
 | `channels/telegram.py`      | `telegram/telegram_bot.c`      | Raw HTTP, no python-telegram-bot |
-| `bus/events.py` + `queue.py`| `bus/message_bus.c`            | FreeRTOS queues vs asyncio   |
+| `bus/events.py` + `queue.py`| `bus/message_bus_esp.c`        | FreeRTOS queues vs asyncio   |
 | `providers/litellm_provider.py` | `llm/llm_proxy.c`         | Direct Anthropic API only    |
 | `config/schema.py`          | `mimi_config.h` + `mimi_secrets.h` | Build-time secrets only  |
 | `cli/commands.py`           | `cli/serial_cli.c`             | esp_console REPL             |

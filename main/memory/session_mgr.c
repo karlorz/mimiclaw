@@ -1,10 +1,10 @@
 #include "session_mgr.h"
 #include "mimi_config.h"
+#include "platform/platform_paths.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <dirent.h>
 #include <time.h>
 #include "esp_log.h"
 #include "cJSON.h"
@@ -16,6 +16,15 @@ static void session_path(const char *chat_id, char *buf, size_t size)
     snprintf(buf, size, "%s/tg_%s.jsonl", MIMI_SPIFFS_SESSION_DIR, chat_id);
 }
 
+static FILE *open_virtual(const char *virtual_path, const char *mode)
+{
+    char real_path[1024];
+    if (platform_path_to_real(virtual_path, real_path, sizeof(real_path)) != MIMI_OK) {
+        return NULL;
+    }
+    return fopen(real_path, mode);
+}
+
 esp_err_t session_mgr_init(void)
 {
     ESP_LOGI(TAG, "Session manager initialized at %s", MIMI_SPIFFS_SESSION_DIR);
@@ -24,12 +33,12 @@ esp_err_t session_mgr_init(void)
 
 esp_err_t session_append(const char *chat_id, const char *role, const char *content)
 {
-    char path[64];
-    session_path(chat_id, path, sizeof(path));
+    char virtual_path[128];
+    session_path(chat_id, virtual_path, sizeof(virtual_path));
 
-    FILE *f = fopen(path, "a");
+    FILE *f = open_virtual(virtual_path, "a");
     if (!f) {
-        ESP_LOGE(TAG, "Cannot open session file %s", path);
+        ESP_LOGE(TAG, "Cannot open session file %s", virtual_path);
         return ESP_FAIL;
     }
 
@@ -52,24 +61,21 @@ esp_err_t session_append(const char *chat_id, const char *role, const char *cont
 
 esp_err_t session_get_history_json(const char *chat_id, char *buf, size_t size, int max_msgs)
 {
-    char path[64];
-    session_path(chat_id, path, sizeof(path));
+    char virtual_path[128];
+    session_path(chat_id, virtual_path, sizeof(virtual_path));
 
-    FILE *f = fopen(path, "r");
+    FILE *f = open_virtual(virtual_path, "r");
     if (!f) {
-        /* No history yet */
         snprintf(buf, size, "[]");
         return ESP_OK;
     }
 
-    /* Read all lines into a ring buffer of cJSON objects */
     cJSON *messages[MIMI_SESSION_MAX_MSGS];
     int count = 0;
     int write_idx = 0;
 
     char line[2048];
     while (fgets(line, sizeof(line), f)) {
-        /* Strip newline */
         size_t len = strlen(line);
         if (len > 0 && line[len - 1] == '\n') line[len - 1] = '\0';
         if (line[0] == '\0') continue;
@@ -77,7 +83,6 @@ esp_err_t session_get_history_json(const char *chat_id, char *buf, size_t size, 
         cJSON *obj = cJSON_Parse(line);
         if (!obj) continue;
 
-        /* Ring buffer: overwrite oldest if full */
         if (count >= max_msgs) {
             cJSON_Delete(messages[write_idx]);
         }
@@ -87,7 +92,6 @@ esp_err_t session_get_history_json(const char *chat_id, char *buf, size_t size, 
     }
     fclose(f);
 
-    /* Build JSON array with only role + content */
     cJSON *arr = cJSON_CreateArray();
     int start = (count < max_msgs) ? 0 : write_idx;
     for (int i = 0; i < count; i++) {
@@ -97,14 +101,13 @@ esp_err_t session_get_history_json(const char *chat_id, char *buf, size_t size, 
         cJSON *entry = cJSON_CreateObject();
         cJSON *role = cJSON_GetObjectItem(src, "role");
         cJSON *content = cJSON_GetObjectItem(src, "content");
-        if (role && content) {
+        if (role && content && cJSON_IsString(role) && cJSON_IsString(content)) {
             cJSON_AddStringToObject(entry, "role", role->valuestring);
             cJSON_AddStringToObject(entry, "content", content->valuestring);
         }
         cJSON_AddItemToArray(arr, entry);
     }
 
-    /* Cleanup ring buffer */
     int cleanup_start = (count < max_msgs) ? 0 : write_idx;
     for (int i = 0; i < count; i++) {
         int idx = (cleanup_start + i) % max_msgs;
@@ -127,10 +130,15 @@ esp_err_t session_get_history_json(const char *chat_id, char *buf, size_t size, 
 
 esp_err_t session_clear(const char *chat_id)
 {
-    char path[64];
-    session_path(chat_id, path, sizeof(path));
+    char virtual_path[128];
+    session_path(chat_id, virtual_path, sizeof(virtual_path));
 
-    if (remove(path) == 0) {
+    char real_path[1024];
+    if (platform_path_to_real(virtual_path, real_path, sizeof(real_path)) != MIMI_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (remove(real_path) == 0) {
         ESP_LOGI(TAG, "Session %s cleared", chat_id);
         return ESP_OK;
     }
@@ -139,25 +147,22 @@ esp_err_t session_clear(const char *chat_id)
 
 void session_list(void)
 {
-    DIR *dir = opendir(MIMI_SPIFFS_SESSION_DIR);
-    if (!dir) {
-        /* SPIFFS is flat, so list all files matching pattern */
-        dir = opendir(MIMI_SPIFFS_BASE);
-        if (!dir) {
-            ESP_LOGW(TAG, "Cannot open SPIFFS directory");
-            return;
-        }
+    char listing[8192] = {0};
+    if (platform_paths_list_virtual(MIMI_SPIFFS_SESSION_DIR "/", listing, sizeof(listing)) != MIMI_OK) {
+        ESP_LOGW(TAG, "Cannot list sessions");
+        return;
     }
 
-    struct dirent *entry;
     int count = 0;
-    while ((entry = readdir(dir)) != NULL) {
-        if (strstr(entry->d_name, "tg_") && strstr(entry->d_name, ".jsonl")) {
-            ESP_LOGI(TAG, "  Session: %s", entry->d_name);
+    char *saveptr = NULL;
+    char *line = strtok_r(listing, "\n", &saveptr);
+    while (line) {
+        if (strstr(line, "/tg_") && strstr(line, ".jsonl")) {
+            ESP_LOGI(TAG, "  Session: %s", line);
             count++;
         }
+        line = strtok_r(NULL, "\n", &saveptr);
     }
-    closedir(dir);
 
     if (count == 0) {
         ESP_LOGI(TAG, "  No sessions found");

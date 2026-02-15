@@ -140,7 +140,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-esp_err_t ws_server_start(void)
+mimi_err_t ws_server_start(void)
 {
     memset(s_clients, 0, sizeof(s_clients));
 
@@ -168,7 +168,7 @@ esp_err_t ws_server_start(void)
     return ESP_OK;
 }
 
-esp_err_t ws_server_send(const char *chat_id, const char *text)
+mimi_err_t ws_server_send(const char *chat_id, const char *text)
 {
     if (!s_server) return ESP_ERR_INVALID_STATE;
 
@@ -206,7 +206,7 @@ esp_err_t ws_server_send(const char *chat_id, const char *text)
     return ret;
 }
 
-esp_err_t ws_server_stop(void)
+mimi_err_t ws_server_stop(void)
 {
     if (s_server) {
         httpd_stop(s_server);

@@ -1,7 +1,7 @@
 idf_component_register(
     SRCS
         "mimi.c"
-        "bus/message_bus.c"
+        "bus/message_bus_esp.c"
         "wifi/wifi_manager.c"
         "telegram/telegram_bot.c"
         "llm/llm_proxy.c"
@@ -17,6 +17,10 @@ idf_component_register(
         "tools/tool_web_search.c"
         "tools/tool_get_time.c"
         "tools/tool_files.c"
+        "platform/platform_kv_esp.c"
+        "platform/platform_http_esp.c"
+        "platform/platform_paths_esp.c"
+        "platform/platform_queue.c"
     INCLUDE_DIRS
         "."
     REQUIRES

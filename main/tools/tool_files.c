@@ -1,28 +1,16 @@
 #include "tools/tool_files.h"
 #include "mimi_config.h"
+#include "platform/platform_paths.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <dirent.h>
-#include <sys/stat.h>
 #include "esp_log.h"
 #include "cJSON.h"
 
 static const char *TAG = "tool_files";
 
 #define MAX_FILE_SIZE (32 * 1024)
-
-/**
- * Validate that a path starts with /spiffs/ and contains no ".." traversal.
- */
-static bool validate_path(const char *path)
-{
-    if (!path) return false;
-    if (strncmp(path, "/spiffs/", 8) != 0) return false;
-    if (strstr(path, "..") != NULL) return false;
-    return true;
-}
 
 /* ── read_file ─────────────────────────────────────────────── */
 
@@ -35,13 +23,20 @@ esp_err_t tool_read_file_execute(const char *input_json, char *output, size_t ou
     }
 
     const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(root, "path"));
-    if (!validate_path(path)) {
+    if (!platform_path_is_valid_virtual(path)) {
         snprintf(output, output_size, "Error: path must start with /spiffs/ and must not contain '..'");
         cJSON_Delete(root);
         return ESP_ERR_INVALID_ARG;
     }
 
-    FILE *f = fopen(path, "r");
+    char real_path[1024];
+    if (platform_path_to_real(path, real_path, sizeof(real_path)) != MIMI_OK) {
+        snprintf(output, output_size, "Error: path not allowed: %s", path);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE *f = fopen(real_path, "r");
     if (!f) {
         snprintf(output, output_size, "Error: file not found: %s", path);
         cJSON_Delete(root);
@@ -73,7 +68,7 @@ esp_err_t tool_write_file_execute(const char *input_json, char *output, size_t o
     const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(root, "path"));
     const char *content = cJSON_GetStringValue(cJSON_GetObjectItem(root, "content"));
 
-    if (!validate_path(path)) {
+    if (!platform_path_is_valid_virtual(path)) {
         snprintf(output, output_size, "Error: path must start with /spiffs/ and must not contain '..'");
         cJSON_Delete(root);
         return ESP_ERR_INVALID_ARG;
@@ -84,7 +79,14 @@ esp_err_t tool_write_file_execute(const char *input_json, char *output, size_t o
         return ESP_ERR_INVALID_ARG;
     }
 
-    FILE *f = fopen(path, "w");
+    char real_path[1024];
+    if (platform_path_to_real(path, real_path, sizeof(real_path)) != MIMI_OK) {
+        snprintf(output, output_size, "Error: path not allowed: %s", path);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE *f = fopen(real_path, "w");
     if (!f) {
         snprintf(output, output_size, "Error: cannot open file for writing: %s", path);
         cJSON_Delete(root);
@@ -121,7 +123,7 @@ esp_err_t tool_edit_file_execute(const char *input_json, char *output, size_t ou
     const char *old_str = cJSON_GetStringValue(cJSON_GetObjectItem(root, "old_string"));
     const char *new_str = cJSON_GetStringValue(cJSON_GetObjectItem(root, "new_string"));
 
-    if (!validate_path(path)) {
+    if (!platform_path_is_valid_virtual(path)) {
         snprintf(output, output_size, "Error: path must start with /spiffs/ and must not contain '..'");
         cJSON_Delete(root);
         return ESP_ERR_INVALID_ARG;
@@ -132,8 +134,14 @@ esp_err_t tool_edit_file_execute(const char *input_json, char *output, size_t ou
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* Read existing file */
-    FILE *f = fopen(path, "r");
+    char real_path[1024];
+    if (platform_path_to_real(path, real_path, sizeof(real_path)) != MIMI_OK) {
+        snprintf(output, output_size, "Error: path not allowed: %s", path);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE *f = fopen(real_path, "r");
     if (!f) {
         snprintf(output, output_size, "Error: file not found: %s", path);
         cJSON_Delete(root);
@@ -151,11 +159,10 @@ esp_err_t tool_edit_file_execute(const char *input_json, char *output, size_t ou
         return ESP_ERR_INVALID_SIZE;
     }
 
-    /* Allocate buffer for the result (old content + possible expansion) */
     size_t old_len = strlen(old_str);
     size_t new_len = strlen(new_str);
-    size_t max_result = file_size + (new_len > old_len ? new_len - old_len : 0) + 1;
-    char *buf = malloc(file_size + 1);
+    size_t max_result = (size_t)file_size + (new_len > old_len ? new_len - old_len : 0) + 1;
+    char *buf = malloc((size_t)file_size + 1);
     char *result = malloc(max_result);
     if (!buf || !result) {
         free(buf);
@@ -166,11 +173,10 @@ esp_err_t tool_edit_file_execute(const char *input_json, char *output, size_t ou
         return ESP_ERR_NO_MEM;
     }
 
-    size_t n = fread(buf, 1, file_size, f);
+    size_t n = fread(buf, 1, (size_t)file_size, f);
     buf[n] = '\0';
     fclose(f);
 
-    /* Find and replace first occurrence */
     char *pos = strstr(buf, old_str);
     if (!pos) {
         snprintf(output, output_size, "Error: old_string not found in %s", path);
@@ -180,7 +186,7 @@ esp_err_t tool_edit_file_execute(const char *input_json, char *output, size_t ou
         return ESP_ERR_NOT_FOUND;
     }
 
-    size_t prefix_len = pos - buf;
+    size_t prefix_len = (size_t)(pos - buf);
     memcpy(result, buf, prefix_len);
     memcpy(result + prefix_len, new_str, new_len);
     size_t suffix_start = prefix_len + old_len;
@@ -191,8 +197,7 @@ esp_err_t tool_edit_file_execute(const char *input_json, char *output, size_t ou
 
     free(buf);
 
-    /* Write back */
-    f = fopen(path, "w");
+    f = fopen(real_path, "w");
     if (!f) {
         snprintf(output, output_size, "Error: cannot open file for writing: %s", path);
         free(result);
@@ -223,37 +228,24 @@ esp_err_t tool_list_dir_execute(const char *input_json, char *output, size_t out
         }
     }
 
-    DIR *dir = opendir(MIMI_SPIFFS_BASE);
-    if (!dir) {
-        snprintf(output, output_size, "Error: cannot open /spiffs directory");
+    if (prefix && !platform_path_is_valid_virtual(prefix)) {
+        snprintf(output, output_size, "Error: prefix must start with /spiffs/ and must not contain '..'");
         cJSON_Delete(root);
-        return ESP_FAIL;
+        return ESP_ERR_INVALID_ARG;
     }
 
-    size_t off = 0;
-    struct dirent *ent;
-    int count = 0;
-
-    while ((ent = readdir(dir)) != NULL && off < output_size - 1) {
-        /* Build full path: SPIFFS entries are just filenames with embedded slashes */
-        char full_path[512];
-        snprintf(full_path, sizeof(full_path), "%s/%s", MIMI_SPIFFS_BASE, ent->d_name);
-
-        if (prefix && strncmp(full_path, prefix, strlen(prefix)) != 0) {
-            continue;
-        }
-
-        off += snprintf(output + off, output_size - off, "%s\n", full_path);
-        count++;
+    esp_err_t err = platform_paths_list_virtual(prefix, output, output_size);
+    if (err != ESP_OK) {
+        snprintf(output, output_size, "Error: cannot list directory");
+        cJSON_Delete(root);
+        return err;
     }
 
-    closedir(dir);
-
-    if (count == 0) {
+    if (output[0] == '\0') {
         snprintf(output, output_size, "(no files found)");
     }
 
-    ESP_LOGI(TAG, "list_dir: %d files (prefix=%s)", count, prefix ? prefix : "(none)");
+    ESP_LOGI(TAG, "list_dir: prefix=%s", prefix ? prefix : "(none)");
     cJSON_Delete(root);
     return ESP_OK;
 }

@@ -1,10 +1,11 @@
 #include "memory_store.h"
 #include "mimi_config.h"
+#include "platform/platform_paths.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <sys/stat.h>
+#include "esp_err.h"
 #include "esp_log.h"
 
 static const char *TAG = "memory";
@@ -19,17 +20,25 @@ static void get_date_str(char *buf, size_t size, int days_ago)
     strftime(buf, size, "%Y-%m-%d", &tm);
 }
 
+static FILE *open_virtual(const char *virtual_path, const char *mode)
+{
+    char real_path[1024];
+    if (platform_path_to_real(virtual_path, real_path, sizeof(real_path)) != MIMI_OK) {
+        return NULL;
+    }
+    return fopen(real_path, mode);
+}
+
 esp_err_t memory_store_init(void)
 {
-    /* SPIFFS is flat — no real directory creation needed.
-       Just verify we can open the base path. */
-    ESP_LOGI(TAG, "Memory store initialized at %s", MIMI_SPIFFS_BASE);
+    ESP_ERROR_CHECK(platform_paths_init(NULL));
+    ESP_LOGI(TAG, "Memory store initialized at %s", platform_paths_state_root());
     return ESP_OK;
 }
 
 esp_err_t memory_read_long_term(char *buf, size_t size)
 {
-    FILE *f = fopen(MIMI_MEMORY_FILE, "r");
+    FILE *f = open_virtual(MIMI_MEMORY_FILE, "r");
     if (!f) {
         buf[0] = '\0';
         return ESP_ERR_NOT_FOUND;
@@ -43,7 +52,7 @@ esp_err_t memory_read_long_term(char *buf, size_t size)
 
 esp_err_t memory_write_long_term(const char *content)
 {
-    FILE *f = fopen(MIMI_MEMORY_FILE, "w");
+    FILE *f = open_virtual(MIMI_MEMORY_FILE, "w");
     if (!f) {
         ESP_LOGE(TAG, "Cannot write %s", MIMI_MEMORY_FILE);
         return ESP_FAIL;
@@ -59,15 +68,14 @@ esp_err_t memory_append_today(const char *note)
     char date_str[16];
     get_date_str(date_str, sizeof(date_str), 0);
 
-    char path[64];
-    snprintf(path, sizeof(path), "%s/%s.md", MIMI_SPIFFS_MEMORY_DIR, date_str);
+    char virtual_path[128];
+    snprintf(virtual_path, sizeof(virtual_path), "%s/%s.md", MIMI_SPIFFS_MEMORY_DIR, date_str);
 
-    FILE *f = fopen(path, "a");
+    FILE *f = open_virtual(virtual_path, "a");
     if (!f) {
-        /* Try creating — if file doesn't exist yet, write header */
-        f = fopen(path, "w");
+        f = open_virtual(virtual_path, "w");
         if (!f) {
-            ESP_LOGE(TAG, "Cannot open %s", path);
+            ESP_LOGE(TAG, "Cannot open %s", virtual_path);
             return ESP_FAIL;
         }
         fprintf(f, "# %s\n\n", date_str);
@@ -87,10 +95,10 @@ esp_err_t memory_read_recent(char *buf, size_t size, int days)
         char date_str[16];
         get_date_str(date_str, sizeof(date_str), i);
 
-        char path[64];
-        snprintf(path, sizeof(path), "%s/%s.md", MIMI_SPIFFS_MEMORY_DIR, date_str);
+        char virtual_path[128];
+        snprintf(virtual_path, sizeof(virtual_path), "%s/%s.md", MIMI_SPIFFS_MEMORY_DIR, date_str);
 
-        FILE *f = fopen(path, "r");
+        FILE *f = open_virtual(virtual_path, "r");
         if (!f) continue;
 
         if (offset > 0 && offset < size - 4) {

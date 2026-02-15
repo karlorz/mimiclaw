@@ -2,7 +2,7 @@
 
 /* MimiClaw Global Configuration */
 
-/* Build-time secrets (highest priority, override NVS) */
+/* Build-time secrets (fallback defaults; runtime overrides take priority) */
 #if __has_include("mimi_secrets.h")
 #include "mimi_secrets.h"
 #endif

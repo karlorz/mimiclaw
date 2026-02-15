@@ -1,14 +1,13 @@
 #include "llm_proxy.h"
 #include "mimi_config.h"
-#include "proxy/http_proxy.h"
+#include "platform/platform_http.h"
+#include "platform/platform_kv.h"
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "esp_log.h"
-#include "esp_http_client.h"
-#include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
-#include "nvs.h"
 #include "cJSON.h"
 
 static const char *TAG = "llm";
@@ -37,25 +36,11 @@ typedef struct {
 
 static esp_err_t resp_buf_init(resp_buf_t *rb, size_t initial_cap)
 {
-    rb->data = heap_caps_calloc(1, initial_cap, MALLOC_CAP_SPIRAM);
+    size_t cap = initial_cap * 4;
+    rb->data = heap_caps_calloc(1, cap, MALLOC_CAP_SPIRAM);
     if (!rb->data) return ESP_ERR_NO_MEM;
     rb->len = 0;
-    rb->cap = initial_cap;
-    return ESP_OK;
-}
-
-static esp_err_t resp_buf_append(resp_buf_t *rb, const char *data, size_t len)
-{
-    while (rb->len + len >= rb->cap) {
-        size_t new_cap = rb->cap * 2;
-        char *tmp = heap_caps_realloc(rb->data, new_cap, MALLOC_CAP_SPIRAM);
-        if (!tmp) return ESP_ERR_NO_MEM;
-        rb->data = tmp;
-        rb->cap = new_cap;
-    }
-    memcpy(rb->data + rb->len, data, len);
-    rb->len += len;
-    rb->data[rb->len] = '\0';
+    rb->cap = cap;
     return ESP_OK;
 }
 
@@ -65,17 +50,6 @@ static void resp_buf_free(resp_buf_t *rb)
     rb->data = NULL;
     rb->len = 0;
     rb->cap = 0;
-}
-
-/* ── HTTP event handler (for esp_http_client direct path) ─────── */
-
-static esp_err_t http_event_handler(esp_http_client_event_t *evt)
-{
-    resp_buf_t *rb = (resp_buf_t *)evt->user_data;
-    if (evt->event_id == HTTP_EVENT_ON_DATA) {
-        resp_buf_append(rb, (const char *)evt->data, evt->data_len);
-    }
-    return ESP_OK;
 }
 
 /* ── Provider helpers ──────────────────────────────────────────── */
@@ -88,16 +62,6 @@ static bool provider_is_openai(void)
 static const char *llm_api_url(void)
 {
     return provider_is_openai() ? MIMI_OPENAI_API_URL : MIMI_LLM_API_URL;
-}
-
-static const char *llm_api_host(void)
-{
-    return provider_is_openai() ? "api.openai.com" : "api.anthropic.com";
-}
-
-static const char *llm_api_path(void)
-{
-    return provider_is_openai() ? "/v1/chat/completions" : "/v1/messages";
 }
 
 /* ── Init ─────────────────────────────────────────────────────── */
@@ -115,25 +79,18 @@ esp_err_t llm_proxy_init(void)
         safe_copy(s_provider, sizeof(s_provider), MIMI_SECRET_MODEL_PROVIDER);
     }
 
-    /* NVS overrides take highest priority (set via CLI) */
-    nvs_handle_t nvs;
-    if (nvs_open(MIMI_NVS_LLM, NVS_READONLY, &nvs) == ESP_OK) {
-        char tmp[128] = {0};
-        size_t len = sizeof(tmp);
-        if (nvs_get_str(nvs, MIMI_NVS_KEY_API_KEY, tmp, &len) == ESP_OK && tmp[0]) {
-            safe_copy(s_api_key, sizeof(s_api_key), tmp);
-        }
-        len = sizeof(tmp);
-        memset(tmp, 0, sizeof(tmp));
-        if (nvs_get_str(nvs, MIMI_NVS_KEY_MODEL, tmp, &len) == ESP_OK && tmp[0]) {
-            safe_copy(s_model, sizeof(s_model), tmp);
-        }
-        len = sizeof(tmp);
-        memset(tmp, 0, sizeof(tmp));
-        if (nvs_get_str(nvs, MIMI_NVS_KEY_PROVIDER, tmp, &len) == ESP_OK && tmp[0]) {
-            safe_copy(s_provider, sizeof(s_provider), tmp);
-        }
-        nvs_close(nvs);
+    /* Runtime KV overrides take highest priority (CLI on ESP, config/env on host) */
+    char tmp[128] = {0};
+    if (platform_kv_get_str(MIMI_NVS_LLM, MIMI_NVS_KEY_API_KEY, tmp, sizeof(tmp)) == MIMI_OK && tmp[0]) {
+        safe_copy(s_api_key, sizeof(s_api_key), tmp);
+    }
+    memset(tmp, 0, sizeof(tmp));
+    if (platform_kv_get_str(MIMI_NVS_LLM, MIMI_NVS_KEY_MODEL, tmp, sizeof(tmp)) == MIMI_OK && tmp[0]) {
+        safe_copy(s_model, sizeof(s_model), tmp);
+    }
+    memset(tmp, 0, sizeof(tmp));
+    if (platform_kv_get_str(MIMI_NVS_LLM, MIMI_NVS_KEY_PROVIDER, tmp, sizeof(tmp)) == MIMI_OK && tmp[0]) {
+        safe_copy(s_provider, sizeof(s_provider), tmp);
     }
 
     if (s_api_key[0]) {
@@ -144,118 +101,28 @@ esp_err_t llm_proxy_init(void)
     return ESP_OK;
 }
 
-/* ── Direct path: esp_http_client ───────────────────────────── */
-
-static esp_err_t llm_http_direct(const char *post_data, resp_buf_t *rb, int *out_status)
-{
-    esp_http_client_config_t config = {
-        .url = llm_api_url(),
-        .event_handler = http_event_handler,
-        .user_data = rb,
-        .timeout_ms = 120 * 1000,
-        .buffer_size = 4096,
-        .buffer_size_tx = 4096,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-    };
-
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) return ESP_FAIL;
-
-    esp_http_client_set_method(client, HTTP_METHOD_POST);
-    esp_http_client_set_header(client, "Content-Type", "application/json");
-    if (provider_is_openai()) {
-        if (s_api_key[0]) {
-            char auth[192];
-            snprintf(auth, sizeof(auth), "Bearer %s", s_api_key);
-            esp_http_client_set_header(client, "Authorization", auth);
-        }
-    } else {
-        esp_http_client_set_header(client, "x-api-key", s_api_key);
-        esp_http_client_set_header(client, "anthropic-version", MIMI_LLM_API_VERSION);
-    }
-    esp_http_client_set_post_field(client, post_data, strlen(post_data));
-
-    esp_err_t err = esp_http_client_perform(client);
-    *out_status = esp_http_client_get_status_code(client);
-    esp_http_client_cleanup(client);
-    return err;
-}
-
-/* ── Proxy path: manual HTTP over CONNECT tunnel ────────────── */
-
-static esp_err_t llm_http_via_proxy(const char *post_data, resp_buf_t *rb, int *out_status)
-{
-    proxy_conn_t *conn = proxy_conn_open(llm_api_host(), 443, 30000);
-    if (!conn) return ESP_ERR_HTTP_CONNECT;
-
-    int body_len = strlen(post_data);
-    char header[512];
-    int hlen = 0;
-    if (provider_is_openai()) {
-        hlen = snprintf(header, sizeof(header),
-            "POST %s HTTP/1.1\r\n"
-            "Host: %s\r\n"
-            "Content-Type: application/json\r\n"
-            "Authorization: Bearer %s\r\n"
-            "Content-Length: %d\r\n"
-            "Connection: close\r\n\r\n",
-            llm_api_path(), llm_api_host(), s_api_key, body_len);
-    } else {
-        hlen = snprintf(header, sizeof(header),
-            "POST %s HTTP/1.1\r\n"
-            "Host: %s\r\n"
-            "Content-Type: application/json\r\n"
-            "x-api-key: %s\r\n"
-            "anthropic-version: %s\r\n"
-            "Content-Length: %d\r\n"
-            "Connection: close\r\n\r\n",
-            llm_api_path(), llm_api_host(), s_api_key, MIMI_LLM_API_VERSION, body_len);
-    }
-
-    if (proxy_conn_write(conn, header, hlen) < 0 ||
-        proxy_conn_write(conn, post_data, body_len) < 0) {
-        proxy_conn_close(conn);
-        return ESP_ERR_HTTP_WRITE_DATA;
-    }
-
-    /* Read full response into buffer */
-    char tmp[4096];
-    while (1) {
-        int n = proxy_conn_read(conn, tmp, sizeof(tmp), 120000);
-        if (n <= 0) break;
-        if (resp_buf_append(rb, tmp, n) != ESP_OK) break;
-    }
-    proxy_conn_close(conn);
-
-    /* Parse status line */
-    *out_status = 0;
-    if (rb->len > 5 && strncmp(rb->data, "HTTP/", 5) == 0) {
-        const char *sp = strchr(rb->data, ' ');
-        if (sp) *out_status = atoi(sp + 1);
-    }
-
-    /* Strip HTTP headers, keep body only */
-    char *body = strstr(rb->data, "\r\n\r\n");
-    if (body) {
-        body += 4;
-        size_t blen = rb->len - (body - rb->data);
-        memmove(rb->data, body, blen);
-        rb->len = blen;
-        rb->data[rb->len] = '\0';
-    }
-
-    return ESP_OK;
-}
-
-/* ── Shared HTTP dispatch ─────────────────────────────────────── */
-
 static esp_err_t llm_http_call(const char *post_data, resp_buf_t *rb, int *out_status)
 {
-    if (http_proxy_is_enabled()) {
-        return llm_http_via_proxy(post_data, rb, out_status);
+    platform_http_header_t headers[3];
+    size_t header_count = 0;
+    headers[header_count++] = (platform_http_header_t){ .name = "Content-Type", .value = "application/json" };
+
+    char auth[192] = {0};
+    if (provider_is_openai()) {
+        if (s_api_key[0]) {
+            snprintf(auth, sizeof(auth), "Bearer %s", s_api_key);
+            headers[header_count++] = (platform_http_header_t){ .name = "Authorization", .value = auth };
+        }
     } else {
-        return llm_http_direct(post_data, rb, out_status);
+        headers[header_count++] = (platform_http_header_t){ .name = "x-api-key", .value = s_api_key };
+        headers[header_count++] = (platform_http_header_t){ .name = "anthropic-version", .value = MIMI_LLM_API_VERSION };
     }
+
+    esp_err_t err = platform_http_post_json(llm_api_url(), headers, header_count,
+                                            post_data, 120 * 1000,
+                                            rb->data, rb->cap, out_status);
+    rb->len = strlen(rb->data);
+    return err;
 }
 
 /* ── Parse text from JSON response ────────────────────────────── */
@@ -798,15 +665,13 @@ esp_err_t llm_chat_tools(const char *system_prompt,
     return ESP_OK;
 }
 
-/* ── NVS helpers ──────────────────────────────────────────────── */
+/* ── Runtime KV helpers ───────────────────────────────────────── */
 
 esp_err_t llm_set_api_key(const char *api_key)
 {
-    nvs_handle_t nvs;
-    ESP_ERROR_CHECK(nvs_open(MIMI_NVS_LLM, NVS_READWRITE, &nvs));
-    ESP_ERROR_CHECK(nvs_set_str(nvs, MIMI_NVS_KEY_API_KEY, api_key));
-    ESP_ERROR_CHECK(nvs_commit(nvs));
-    nvs_close(nvs);
+    if (platform_kv_set_str(MIMI_NVS_LLM, MIMI_NVS_KEY_API_KEY, api_key) != MIMI_OK) {
+        return ESP_FAIL;
+    }
 
     safe_copy(s_api_key, sizeof(s_api_key), api_key);
     ESP_LOGI(TAG, "API key saved");
@@ -815,11 +680,9 @@ esp_err_t llm_set_api_key(const char *api_key)
 
 esp_err_t llm_set_model(const char *model)
 {
-    nvs_handle_t nvs;
-    ESP_ERROR_CHECK(nvs_open(MIMI_NVS_LLM, NVS_READWRITE, &nvs));
-    ESP_ERROR_CHECK(nvs_set_str(nvs, MIMI_NVS_KEY_MODEL, model));
-    ESP_ERROR_CHECK(nvs_commit(nvs));
-    nvs_close(nvs);
+    if (platform_kv_set_str(MIMI_NVS_LLM, MIMI_NVS_KEY_MODEL, model) != MIMI_OK) {
+        return ESP_FAIL;
+    }
 
     safe_copy(s_model, sizeof(s_model), model);
     ESP_LOGI(TAG, "Model set to: %s", s_model);
@@ -828,11 +691,9 @@ esp_err_t llm_set_model(const char *model)
 
 esp_err_t llm_set_provider(const char *provider)
 {
-    nvs_handle_t nvs;
-    ESP_ERROR_CHECK(nvs_open(MIMI_NVS_LLM, NVS_READWRITE, &nvs));
-    ESP_ERROR_CHECK(nvs_set_str(nvs, MIMI_NVS_KEY_PROVIDER, provider));
-    ESP_ERROR_CHECK(nvs_commit(nvs));
-    nvs_close(nvs);
+    if (platform_kv_set_str(MIMI_NVS_LLM, MIMI_NVS_KEY_PROVIDER, provider) != MIMI_OK) {
+        return ESP_FAIL;
+    }
 
     safe_copy(s_provider, sizeof(s_provider), provider);
     ESP_LOGI(TAG, "Provider set to: %s", s_provider);

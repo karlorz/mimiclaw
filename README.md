@@ -126,6 +126,35 @@ mimi> session_clear 12345      # wipe a conversation
 mimi> restart                  # reboot
 ```
 
+## Host Runtime (Linux/macOS)
+
+MimiClaw now includes a native host daemon entrypoint under `host/` with shared core logic from `main/`.
+
+Build:
+
+```bash
+cmake -S /Users/karlchow/Desktop/code/mimiclaw/host -B /Users/karlchow/Desktop/code/mimiclaw/build-host
+cmake --build /Users/karlchow/Desktop/code/mimiclaw/build-host
+```
+
+Run:
+
+```bash
+/Users/karlchow/Desktop/code/mimiclaw/build-host/mimiclaw-host
+```
+
+Phase-1 host limitations:
+- WebSocket ingress only
+- No Telegram poller/sender on host
+- No WiFi manager, serial CLI, or OTA manager on host
+
+Config:
+- default file: `~/.mimiclaw/config.json`
+- env overrides: `MIMI_API_KEY`, `MIMI_MODEL`, `MIMI_MODEL_PROVIDER`, `MIMI_SEARCH_KEY`, `MIMI_WS_BIND`, `MIMI_WS_PORT`, `MIMI_STATE_ROOT`, `MIMI_TIMEZONE`
+- CLI flags: `--config`, `--ws-bind`, `--ws-port`, `--state-root`
+
+Details: see [`host/README.md`](host/README.md).
+
 ## Memory
 
 MimiClaw stores everything as plain text files you can read and edit:

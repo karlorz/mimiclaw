@@ -1,6 +1,7 @@
 #include "context_builder.h"
 #include "mimi_config.h"
 #include "memory/memory_store.h"
+#include "platform/platform_paths.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -11,7 +12,12 @@ static const char *TAG = "context";
 
 static size_t append_file(char *buf, size_t size, size_t offset, const char *path, const char *header)
 {
-    FILE *f = fopen(path, "r");
+    char real_path[1024];
+    if (platform_path_to_real(path, real_path, sizeof(real_path)) != MIMI_OK) {
+        return offset;
+    }
+
+    FILE *f = fopen(real_path, "r");
     if (!f) return offset;
 
     if (header && offset < size - 1) {
