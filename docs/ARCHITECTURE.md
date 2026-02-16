@@ -158,6 +158,16 @@ main/
 
 ---
 
+## CI Governance
+
+Fork mainline stability is gated by two required CI workflows:
+- `Host Build & Smoke`: native host build, deterministic offline regressions, and WebSocket smoke checks (no API keys required).
+- `Firmware Build`: ESP-IDF `idf.py set-target esp32s3 && idf.py build` in `espressif/idf:v5.5.2`.
+
+This dual gate protects shared core behavior (`main/`) across host runtime and firmware before merge.
+
+---
+
 ## FreeRTOS Task Layout
 
 | Task               | Core | Priority | Stack  | Description                          |

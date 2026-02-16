@@ -3,6 +3,7 @@ project(mimiclaw_host C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+enable_testing()
 
 find_package(Threads REQUIRED)
 find_package(CURL REQUIRED)
@@ -66,3 +67,18 @@ target_link_libraries(mimiclaw-host PRIVATE
     ${LWS_LIBRARIES}
     ${CJSON_LIBRARIES}
 )
+
+add_executable(path_map_host_test
+    tests/path_map_host_test.c
+    platform/path_map_host.c
+    platform/platform_types_host.c
+)
+
+target_compile_definitions(path_map_host_test PRIVATE MIMI_HOST_BUILD=1)
+
+target_include_directories(path_map_host_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../main
+)
+
+add_test(NAME path_map_host_test COMMAND path_map_host_test)

@@ -156,6 +156,17 @@ make host-smoke
 make host-ci
 ```
 
+Baseline host CI smoke/regression checks do not require external LLM API keys.
+
+Firmware CI-equivalent build (requires ESP-IDF environment):
+
+```bash
+make firmware-ci
+
+# run host + firmware gates together
+make ci-all
+```
+
 Phase-1 host limitations:
 - WebSocket ingress only
 - No Telegram poller/sender on host

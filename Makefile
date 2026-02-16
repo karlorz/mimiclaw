@@ -1,4 +1,4 @@
-.PHONY: host-build host-smoke host-run host-ci
+.PHONY: host-build host-smoke host-run host-ci firmware-ci ci-all
 
 BUILD_HOST_DIR ?= build-host
 
@@ -13,3 +13,8 @@ host-run: host-build
 
 host-ci:
 	BUILD_DIR=$(BUILD_HOST_DIR) ./scripts/host/ci.sh
+
+firmware-ci:
+	./scripts/firmware/ci.sh
+
+ci-all: host-ci firmware-ci
