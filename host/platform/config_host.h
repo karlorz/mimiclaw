@@ -9,6 +9,7 @@ typedef struct {
     char api_key[256];
     char model[128];
     char model_provider[32];
+    char api_base[256];
     char search_key[256];
     char ws_bind[64];
     uint16_t ws_port;

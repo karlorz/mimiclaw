@@ -56,6 +56,7 @@ Example:
   "api_key": "sk-ant-api03-...",
   "model": "claude-opus-4-5",
   "model_provider": "anthropic",
+  "api_base": "",
   "search_key": "BSA...",
   "ws_bind": "127.0.0.1",
   "ws_port": 18789,
@@ -67,15 +68,21 @@ Example:
 You can also start from:
 - `host/config.json.example`
 
-Environment overrides:
+Environment overrides (`.env` in current working directory is auto-loaded):
 - `MIMI_API_KEY`
+- `AI_API_KEY`
 - `MIMI_MODEL`
+- `AI_MODEL`
 - `MIMI_MODEL_PROVIDER`
+- `AI_PROVIDER`
+- `MIMI_API_BASE`
+- `AI_API_BASE`
 - `MIMI_SEARCH_KEY`
 - `MIMI_WS_BIND`
 - `MIMI_WS_PORT`
 - `MIMI_STATE_ROOT`
 - `MIMI_TIMEZONE`
+- `MIMI_ENV_FILE` (optional custom `.env` path)
 
 CLI flags:
 - `--config <path>`

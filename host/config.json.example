@@ -2,6 +2,7 @@
   "api_key": "",
   "model": "claude-opus-4-5",
   "model_provider": "anthropic",
+  "api_base": "",
   "search_key": "",
   "ws_bind": "127.0.0.1",
   "ws_port": 18789,

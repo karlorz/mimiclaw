@@ -15,6 +15,8 @@ static const char *TAG = "llm";
 static char s_api_key[128] = {0};
 static char s_model[64] = MIMI_LLM_DEFAULT_MODEL;
 static char s_provider[16] = MIMI_LLM_PROVIDER_DEFAULT;
+static char s_api_base[256] = {0};
+static char s_api_url_buf[320] = {0};
 
 static void safe_copy(char *dst, size_t dst_size, const char *src)
 {
@@ -54,14 +56,59 @@ static void resp_buf_free(resp_buf_t *rb)
 
 /* ── Provider helpers ──────────────────────────────────────────── */
 
-static bool provider_is_openai(void)
+static bool provider_is_anthropic(void)
 {
-    return strcmp(s_provider, "openai") == 0;
+    return strcmp(s_provider, "anthropic") == 0;
+}
+
+static bool provider_is_openai_compatible(void)
+{
+    return !provider_is_anthropic();
+}
+
+static bool has_suffix(const char *text, const char *suffix)
+{
+    if (!text || !suffix) return false;
+    size_t tlen = strlen(text);
+    size_t slen = strlen(suffix);
+    if (slen > tlen) return false;
+    return strcmp(text + tlen - slen, suffix) == 0;
+}
+
+static const char *join_api_url(const char *base, const char *suffix)
+{
+    if (!base || !base[0]) return NULL;
+    if (!suffix || !suffix[0]) return base;
+
+    if (has_suffix(base, suffix)) {
+        safe_copy(s_api_url_buf, sizeof(s_api_url_buf), base);
+        return s_api_url_buf;
+    }
+
+    size_t base_len = strlen(base);
+    bool base_has_slash = base_len > 0 && base[base_len - 1] == '/';
+    const char *suffix_part = suffix;
+    if (base_has_slash && suffix[0] == '/') {
+        suffix_part = suffix + 1;
+    }
+
+    if (base_has_slash) {
+        snprintf(s_api_url_buf, sizeof(s_api_url_buf), "%s%s", base, suffix_part);
+    } else {
+        snprintf(s_api_url_buf, sizeof(s_api_url_buf), "%s%s%s",
+                 base, (suffix[0] == '/') ? "" : "/", suffix);
+    }
+
+    return s_api_url_buf;
 }
 
 static const char *llm_api_url(void)
 {
-    return provider_is_openai() ? MIMI_OPENAI_API_URL : MIMI_LLM_API_URL;
+    if (s_api_base[0]) {
+        return join_api_url(s_api_base,
+                            provider_is_openai_compatible() ? "/chat/completions" : "/messages");
+    }
+    return provider_is_openai_compatible() ? MIMI_OPENAI_API_URL : MIMI_LLM_API_URL;
 }
 
 /* ── Init ─────────────────────────────────────────────────────── */
@@ -78,9 +125,12 @@ esp_err_t llm_proxy_init(void)
     if (MIMI_SECRET_MODEL_PROVIDER[0] != '\0') {
         safe_copy(s_provider, sizeof(s_provider), MIMI_SECRET_MODEL_PROVIDER);
     }
+    if (MIMI_SECRET_API_BASE[0] != '\0') {
+        safe_copy(s_api_base, sizeof(s_api_base), MIMI_SECRET_API_BASE);
+    }
 
     /* Runtime KV overrides take highest priority (CLI on ESP, config/env on host) */
-    char tmp[128] = {0};
+    char tmp[256] = {0};
     if (platform_kv_get_str(MIMI_NVS_LLM, MIMI_NVS_KEY_API_KEY, tmp, sizeof(tmp)) == MIMI_OK && tmp[0]) {
         safe_copy(s_api_key, sizeof(s_api_key), tmp);
     }
@@ -92,9 +142,14 @@ esp_err_t llm_proxy_init(void)
     if (platform_kv_get_str(MIMI_NVS_LLM, MIMI_NVS_KEY_PROVIDER, tmp, sizeof(tmp)) == MIMI_OK && tmp[0]) {
         safe_copy(s_provider, sizeof(s_provider), tmp);
     }
+    memset(tmp, 0, sizeof(tmp));
+    if (platform_kv_get_str(MIMI_NVS_LLM, MIMI_NVS_KEY_API_BASE, tmp, sizeof(tmp)) == MIMI_OK && tmp[0]) {
+        safe_copy(s_api_base, sizeof(s_api_base), tmp);
+    }
 
     if (s_api_key[0]) {
-        ESP_LOGI(TAG, "LLM proxy initialized (provider: %s, model: %s)", s_provider, s_model);
+        ESP_LOGI(TAG, "LLM proxy initialized (provider: %s, model: %s, url: %s)",
+                 s_provider, s_model, llm_api_url());
     } else {
         ESP_LOGW(TAG, "No API key. Use CLI: set_api_key <KEY>");
     }
@@ -108,7 +163,7 @@ static esp_err_t llm_http_call(const char *post_data, resp_buf_t *rb, int *out_s
     headers[header_count++] = (platform_http_header_t){ .name = "Content-Type", .value = "application/json" };
 
     char auth[192] = {0};
-    if (provider_is_openai()) {
+    if (provider_is_openai_compatible()) {
         if (s_api_key[0]) {
             snprintf(auth, sizeof(auth), "Bearer %s", s_api_key);
             headers[header_count++] = (platform_http_header_t){ .name = "Authorization", .value = auth };
@@ -347,7 +402,7 @@ esp_err_t llm_chat(const char *system_prompt, const char *messages_json,
     cJSON_AddStringToObject(body, "model", s_model);
     cJSON_AddNumberToObject(body, "max_tokens", MIMI_LLM_MAX_TOKENS);
 
-    if (provider_is_openai()) {
+    if (provider_is_openai_compatible()) {
         cJSON *messages = cJSON_Parse(messages_json);
         if (!messages) {
             messages = cJSON_CreateArray();
@@ -420,7 +475,7 @@ esp_err_t llm_chat(const char *system_prompt, const char *messages_json,
         return ESP_FAIL;
     }
 
-    if (provider_is_openai()) {
+    if (provider_is_openai_compatible()) {
         extract_text_openai(root, response_buf, buf_size);
     } else {
         extract_text_anthropic(root, response_buf, buf_size);
@@ -465,7 +520,7 @@ esp_err_t llm_chat_tools(const char *system_prompt,
     cJSON_AddStringToObject(body, "model", s_model);
     cJSON_AddNumberToObject(body, "max_tokens", MIMI_LLM_MAX_TOKENS);
 
-    if (provider_is_openai()) {
+    if (provider_is_openai_compatible()) {
         cJSON *openai_msgs = convert_messages_openai(system_prompt, messages);
         cJSON_AddItemToObject(body, "messages", openai_msgs);
 
@@ -531,7 +586,7 @@ esp_err_t llm_chat_tools(const char *system_prompt,
         return ESP_FAIL;
     }
 
-    if (provider_is_openai()) {
+    if (provider_is_openai_compatible()) {
         cJSON *choices = cJSON_GetObjectItem(root, "choices");
         cJSON *choice0 = choices && cJSON_IsArray(choices) ? cJSON_GetArrayItem(choices, 0) : NULL;
         if (choice0) {

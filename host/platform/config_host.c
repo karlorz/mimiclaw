@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <ctype.h>
 #include <errno.h>
 #include <time.h>
 #include <stdbool.h>
@@ -38,6 +39,89 @@ static void expand_home(const char *in, char *out, size_t out_size)
     }
 
     snprintf(out, out_size, "%s", in);
+}
+
+static char *trim_left(char *s)
+{
+    while (s && *s && isspace((unsigned char)*s)) s++;
+    return s;
+}
+
+static void trim_right(char *s)
+{
+    if (!s) return;
+    size_t len = strlen(s);
+    while (len > 0 && isspace((unsigned char)s[len - 1])) {
+        s[--len] = '\0';
+    }
+}
+
+static void trim_inplace(char *s)
+{
+    if (!s) return;
+    char *start = trim_left(s);
+    if (start != s) {
+        memmove(s, start, strlen(start) + 1);
+    }
+    trim_right(s);
+}
+
+static void strip_matching_quotes(char *s)
+{
+    if (!s) return;
+    size_t len = strlen(s);
+    if (len < 2) return;
+    if ((s[0] == '"' && s[len - 1] == '"') || (s[0] == '\'' && s[len - 1] == '\'')) {
+        memmove(s, s + 1, len - 2);
+        s[len - 2] = '\0';
+    }
+}
+
+static void load_dotenv_file(const char *path)
+{
+    if (!path || path[0] == '\0') return;
+
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+
+    char line[2048];
+    while (fgets(line, sizeof(line), f)) {
+        char *p = trim_left(line);
+        if (!p || p[0] == '\0' || p[0] == '#') continue;
+
+        if (strncmp(p, "export ", 7) == 0) {
+            p += 7;
+            p = trim_left(p);
+        }
+
+        char *eq = strchr(p, '=');
+        if (!eq) continue;
+
+        *eq = '\0';
+        char *key = p;
+        char *value = eq + 1;
+
+        trim_inplace(key);
+        trim_inplace(value);
+
+        if (!key[0]) continue;
+
+        strip_matching_quotes(value);
+
+        if (!getenv(key)) {
+            setenv(key, value, 0);
+        }
+    }
+
+    fclose(f);
+}
+
+static const char *first_nonempty_env(const char *first, const char *second)
+{
+    const char *v = getenv(first);
+    if (v && v[0]) return v;
+    v = getenv(second);
+    return (v && v[0]) ? v : NULL;
 }
 
 static char *read_file(const char *path)
@@ -88,6 +172,8 @@ static void apply_json_config(cJSON *root)
     if (v) safe_copy(s_cfg.model, sizeof(s_cfg.model), v);
     v = json_get_str(root, "model_provider");
     if (v) safe_copy(s_cfg.model_provider, sizeof(s_cfg.model_provider), v);
+    v = json_get_str(root, "api_base");
+    if (v) safe_copy(s_cfg.api_base, sizeof(s_cfg.api_base), v);
     v = json_get_str(root, "search_key");
     if (v) safe_copy(s_cfg.search_key, sizeof(s_cfg.search_key), v);
     v = json_get_str(root, "ws_bind");
@@ -115,6 +201,10 @@ static void apply_json_config(cJSON *root)
         if (v) safe_copy(s_cfg.model, sizeof(s_cfg.model), v);
         v = json_get_str(llm, "provider");
         if (v) safe_copy(s_cfg.model_provider, sizeof(s_cfg.model_provider), v);
+        v = json_get_str(llm, "api_base");
+        if (v) safe_copy(s_cfg.api_base, sizeof(s_cfg.api_base), v);
+        v = json_get_str(llm, "base_url");
+        if (v) safe_copy(s_cfg.api_base, sizeof(s_cfg.api_base), v);
     }
 
     cJSON *search = cJSON_GetObjectItem(root, "search");
@@ -150,19 +240,32 @@ static void apply_json_config(cJSON *root)
 
 static void apply_env_overrides(void)
 {
-    const char *v;
-
-    v = getenv("MIMI_API_KEY");
+    const char *v = first_nonempty_env("MIMI_API_KEY", "AI_API_KEY");
     if (v && v[0]) safe_copy(s_cfg.api_key, sizeof(s_cfg.api_key), v);
 
-    v = getenv("MIMI_MODEL");
+    const char *model_env = first_nonempty_env("MIMI_MODEL", "AI_MODEL");
+    v = model_env;
     if (v && v[0]) safe_copy(s_cfg.model, sizeof(s_cfg.model), v);
 
-    v = getenv("MIMI_MODEL_PROVIDER");
+    const char *provider_env = first_nonempty_env("MIMI_MODEL_PROVIDER", "AI_PROVIDER");
+    v = provider_env;
     if (v && v[0]) safe_copy(s_cfg.model_provider, sizeof(s_cfg.model_provider), v);
 
     v = getenv("MIMI_SEARCH_KEY");
     if (v && v[0]) safe_copy(s_cfg.search_key, sizeof(s_cfg.search_key), v);
+
+    const char *api_base_env = first_nonempty_env("MIMI_API_BASE", "AI_API_BASE");
+    if (api_base_env && api_base_env[0]) {
+        safe_copy(s_cfg.api_base, sizeof(s_cfg.api_base), api_base_env);
+        if (!provider_env || !provider_env[0]) {
+            safe_copy(s_cfg.model_provider, sizeof(s_cfg.model_provider), "openai");
+        }
+    }
+
+    if ((!provider_env || !provider_env[0]) &&
+        model_env && strncasecmp(model_env, "openai/", strlen("openai/")) == 0) {
+        safe_copy(s_cfg.model_provider, sizeof(s_cfg.model_provider), "openai");
+    }
 
     v = getenv("MIMI_WS_BIND");
     if (v && v[0]) safe_copy(s_cfg.ws_bind, sizeof(s_cfg.ws_bind), v);
@@ -190,11 +293,19 @@ mimi_err_t host_config_load(int argc, char **argv)
 {
     memset(&s_cfg, 0, sizeof(s_cfg));
 
+    const char *env_file = getenv("MIMI_ENV_FILE");
+    if (env_file && env_file[0]) {
+        load_dotenv_file(env_file);
+    } else {
+        load_dotenv_file(".env");
+    }
+
     const char *home = getenv("HOME");
     if (!home || !home[0]) home = "/tmp";
 
     safe_copy(s_cfg.model, sizeof(s_cfg.model), MIMI_LLM_DEFAULT_MODEL);
     safe_copy(s_cfg.model_provider, sizeof(s_cfg.model_provider), MIMI_LLM_PROVIDER_DEFAULT);
+    safe_copy(s_cfg.api_base, sizeof(s_cfg.api_base), MIMI_SECRET_API_BASE);
     safe_copy(s_cfg.ws_bind, sizeof(s_cfg.ws_bind), "127.0.0.1");
     s_cfg.ws_port = MIMI_WS_PORT;
     safe_copy(s_cfg.timezone, sizeof(s_cfg.timezone), MIMI_TIMEZONE);
@@ -262,13 +373,14 @@ mimi_err_t host_config_load(int argc, char **argv)
         tzset();
     }
 
-    ESP_LOGI(TAG, "config=%s state_root=%s ws=%s:%u provider=%s model=%s",
+    ESP_LOGI(TAG, "config=%s state_root=%s ws=%s:%u provider=%s model=%s api_base=%s",
              s_cfg.config_path,
              s_cfg.state_root,
              s_cfg.ws_bind,
              (unsigned)s_cfg.ws_port,
              s_cfg.model_provider,
-             s_cfg.model);
+             s_cfg.model,
+             s_cfg.api_base[0] ? s_cfg.api_base : "<default>");
 
     return MIMI_OK;
 }
@@ -287,6 +399,7 @@ mimi_err_t host_config_get_str(const char *ns, const char *key, char *out, size_
     if (key_match(ns, MIMI_NVS_LLM) && key_match(key, MIMI_NVS_KEY_API_KEY)) src = s_cfg.api_key;
     if (key_match(ns, MIMI_NVS_LLM) && key_match(key, MIMI_NVS_KEY_MODEL)) src = s_cfg.model;
     if (key_match(ns, MIMI_NVS_LLM) && key_match(key, MIMI_NVS_KEY_PROVIDER)) src = s_cfg.model_provider;
+    if (key_match(ns, MIMI_NVS_LLM) && key_match(key, MIMI_NVS_KEY_API_BASE)) src = s_cfg.api_base;
     if (key_match(ns, MIMI_NVS_SEARCH) && key_match(key, MIMI_NVS_KEY_API_KEY)) src = s_cfg.search_key;
     if (key_match(ns, MIMI_NVS_PROXY) && key_match(key, MIMI_NVS_KEY_PROXY_HOST)) src = s_cfg.proxy_host;
 
@@ -313,6 +426,10 @@ mimi_err_t host_config_set_str(const char *ns, const char *key, const char *valu
     }
     if (key_match(ns, MIMI_NVS_LLM) && key_match(key, MIMI_NVS_KEY_PROVIDER)) {
         safe_copy(s_cfg.model_provider, sizeof(s_cfg.model_provider), value);
+        return MIMI_OK;
+    }
+    if (key_match(ns, MIMI_NVS_LLM) && key_match(key, MIMI_NVS_KEY_API_BASE)) {
+        safe_copy(s_cfg.api_base, sizeof(s_cfg.api_base), value);
         return MIMI_OK;
     }
     if (key_match(ns, MIMI_NVS_SEARCH) && key_match(key, MIMI_NVS_KEY_API_KEY)) {
@@ -366,6 +483,10 @@ mimi_err_t host_config_erase_key(const char *ns, const char *key)
     }
     if (key_match(ns, MIMI_NVS_LLM) && key_match(key, MIMI_NVS_KEY_PROVIDER)) {
         s_cfg.model_provider[0] = '\0';
+        return MIMI_OK;
+    }
+    if (key_match(ns, MIMI_NVS_LLM) && key_match(key, MIMI_NVS_KEY_API_BASE)) {
+        s_cfg.api_base[0] = '\0';
         return MIMI_OK;
     }
     if (key_match(ns, MIMI_NVS_SEARCH) && key_match(key, MIMI_NVS_KEY_API_KEY)) {
