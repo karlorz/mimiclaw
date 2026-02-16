@@ -160,11 +160,15 @@ main/
 
 ## CI Governance
 
-Fork mainline stability is gated by two required CI workflows:
-- `Host Build & Smoke`: native host build, deterministic offline regressions, and WebSocket smoke checks (no API keys required).
+Mainline merge safety is gated by two required CI workflows:
+- `Host Build & Smoke`: native host build, deterministic offline regressions, and keyless WebSocket smoke checks.
 - `Firmware Build`: ESP-IDF `idf.py set-target esp32s3 && idf.py build` in `espressif/idf:v5.5.2`.
 
-This dual gate protects shared core behavior (`main/`) across host runtime and firmware before merge.
+Deploy-readiness (pre-release) adds two extra gates:
+- Manual `Host Live Validation` workflow (`.github/workflows/host-live-validation.yml`) with provider matrix `anthropic` + `openai` and secret-backed live API calls.
+- Real-device firmware validation checklist and evidence capture defined in `docs/DEPLOY_READINESS.md`.
+
+“Fully deployable” status requires all baseline and deploy-readiness gates to pass on the same mainline commit.
 
 ---
 

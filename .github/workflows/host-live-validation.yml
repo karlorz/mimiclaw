@@ -1,0 +1,75 @@
+name: Host Live Validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  live:
+    name: live-${{ matrix.provider }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [anthropic, openai]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps (Ubuntu)
+        run: |
+          ./scripts/host/install-deps-ubuntu.sh
+
+      - name: Validate required secret
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          case "${PROVIDER}" in
+            anthropic)
+              if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+                echo "::error::Missing required secret ANTHROPIC_API_KEY for provider=anthropic"
+                exit 1
+              fi
+              ;;
+            openai)
+              if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+                echo "::error::Missing required secret OPENAI_API_KEY for provider=openai"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Unsupported provider ${PROVIDER}"
+              exit 1
+              ;;
+          esac
+
+      - name: Build and run live smoke
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          case "${PROVIDER}" in
+            anthropic)
+              make host-ci-live-anthropic
+              ;;
+            openai)
+              make host-ci-live-openai
+              ;;
+          esac
+
+      - name: Upload host live logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-live-logs-${{ matrix.provider }}
+          path: |
+            .tmp/mimiclaw-host-smoke-live-${{ matrix.provider }}/host.log
+            .tmp/mimiclaw-host-smoke-live-${{ matrix.provider }}/config.json
+            .tmp/mimiclaw-host-smoke-live-${{ matrix.provider }}/sessions/tg_ci_live_${{ matrix.provider }}.jsonl
+            .tmp/mimiclaw-host-smoke-live-${{ matrix.provider }}/memory/*
+          if-no-files-found: ignore

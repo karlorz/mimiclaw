@@ -5,6 +5,15 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build-host}"
 BIN="${BUILD_DIR}/mimiclaw-host"
 PYTHON="${PYTHON:-python3}"
+SMOKE_CLIENT="${SMOKE_CLIENT:-${ROOT_DIR}/scripts/host/smoke_ws.py}"
+SMOKE_CHAT_ID="${SMOKE_CHAT_ID:-ci_smoke}"
+SMOKE_CONTENT="${SMOKE_CONTENT:-hello from smoke}"
+SMOKE_TIMEOUT="${SMOKE_TIMEOUT:-20}"
+SMOKE_DISALLOW_FALLBACK="${SMOKE_DISALLOW_FALLBACK:-}"
+LLM_API_KEY="${LLM_API_KEY:-}"
+LLM_MODEL="${LLM_MODEL:-claude-opus-4-5}"
+LLM_MODEL_PROVIDER="${LLM_MODEL_PROVIDER:-anthropic}"
+SEARCH_API_KEY="${SEARCH_API_KEY:-}"
 
 if [[ ! -x "${BIN}" ]]; then
   echo "host binary not found: ${BIN}" >&2
@@ -69,10 +78,10 @@ mkdir -p "${STATE_ROOT}/config" "${STATE_ROOT}/memory" "${STATE_ROOT}/sessions"
 
 cat > "${CONFIG_PATH}" <<JSON
 {
-  "api_key": "",
-  "model": "claude-opus-4-5",
-  "model_provider": "anthropic",
-  "search_key": "",
+  "api_key": "${LLM_API_KEY}",
+  "model": "${LLM_MODEL}",
+  "model_provider": "${LLM_MODEL_PROVIDER}",
+  "search_key": "${SEARCH_API_KEY}",
   "ws_bind": "${WS_BIND}",
   "ws_port": ${WS_PORT},
   "state_root": "${STATE_ROOT}",
@@ -104,18 +113,25 @@ if ! wait_port "${WS_BIND}" "${WS_PORT}"; then
   exit 1
 fi
 
-if ! "${PYTHON}" "${ROOT_DIR}/scripts/host/smoke_ws.py" \
-  --url "ws://${WS_BIND}:${WS_PORT}" \
-  --chat-id "ci_smoke" \
-  --content "hello from smoke" \
-  --timeout 20; then
+SMOKE_ARGS=(
+  --url "ws://${WS_BIND}:${WS_PORT}"
+  --chat-id "${SMOKE_CHAT_ID}"
+  --content "${SMOKE_CONTENT}"
+  --timeout "${SMOKE_TIMEOUT}"
+)
+
+if [[ -n "${SMOKE_DISALLOW_FALLBACK}" ]]; then
+  SMOKE_ARGS+=(--disallow-fallback "${SMOKE_DISALLOW_FALLBACK}")
+fi
+
+if ! "${PYTHON}" "${SMOKE_CLIENT}" "${SMOKE_ARGS[@]}"; then
   echo "websocket smoke check failed; host log tail:" >&2
   tail -n 200 "${LOG_PATH}" >&2 || true
   exit 1
 fi
 
-if [[ ! -f "${STATE_ROOT}/sessions/tg_ci_smoke.jsonl" ]]; then
-  echo "expected session file missing: ${STATE_ROOT}/sessions/tg_ci_smoke.jsonl" >&2
+if [[ ! -f "${STATE_ROOT}/sessions/tg_${SMOKE_CHAT_ID}.jsonl" ]]; then
+  echo "expected session file missing: ${STATE_ROOT}/sessions/tg_${SMOKE_CHAT_ID}.jsonl" >&2
   exit 1
 fi
 

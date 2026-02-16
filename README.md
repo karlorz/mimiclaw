@@ -152,11 +152,20 @@ python3 -m pip install websockets
 # or
 make host-smoke
 
-# CI-equivalent flow
+# Baseline CI-equivalent flow (keyless)
 make host-ci
+
+# Required live-provider validation
+export ANTHROPIC_API_KEY=...
+export OPENAI_API_KEY=...
+make host-ci-live-anthropic
+make host-ci-live-openai
+# or run both sequentially
+make host-ci-live-all
 ```
 
 Baseline host CI smoke/regression checks do not require external LLM API keys.
+Live provider validation is available in the manual GitHub Actions workflow `.github/workflows/host-live-validation.yml`.
 
 Firmware CI-equivalent build (requires ESP-IDF environment):
 
@@ -216,6 +225,7 @@ To enable web search, set a [Brave Search API key](https://brave.com/search/api/
 Technical details live in the `docs/` folder:
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — system design, module map, task layout, memory budget, protocols, flash partitions
+- **[docs/DEPLOY_READINESS.md](docs/DEPLOY_READINESS.md)** — host + live-provider + firmware/device deploy gates and evidence checklist
 - **[docs/TODO.md](docs/TODO.md)** — feature gap tracker and roadmap
 
 ## License

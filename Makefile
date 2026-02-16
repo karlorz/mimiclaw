@@ -1,4 +1,4 @@
-.PHONY: host-build host-smoke host-run host-ci firmware-ci ci-all
+.PHONY: host-build host-smoke host-run host-ci host-ci-live-anthropic host-ci-live-openai host-ci-live-all firmware-ci ci-all
 
 BUILD_HOST_DIR ?= build-host
 
@@ -13,6 +13,16 @@ host-run: host-build
 
 host-ci:
 	BUILD_DIR=$(BUILD_HOST_DIR) ./scripts/host/ci.sh
+
+host-ci-live-anthropic:
+	BUILD_DIR=$(BUILD_HOST_DIR) LIVE_PROVIDER=anthropic ./scripts/host/ci.sh --live-provider anthropic
+
+host-ci-live-openai:
+	BUILD_DIR=$(BUILD_HOST_DIR) LIVE_PROVIDER=openai ./scripts/host/ci.sh --live-provider openai
+
+host-ci-live-all:
+	$(MAKE) host-ci-live-anthropic
+	$(MAKE) host-ci-live-openai
 
 firmware-ci:
 	./scripts/firmware/ci.sh

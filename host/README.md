@@ -38,6 +38,12 @@ make host-build
 Binary:
 - `/Users/karlchow/Desktop/code/mimiclaw/build-host/mimiclaw-host`
 
+If this workspace was synced from another machine, clear stale host artifacts before rebuilding to avoid CMake source-path mismatch errors:
+
+```bash
+rm -rf build-host .tmp/host-ci-venv
+```
+
 ## Config
 
 Default config file:
@@ -98,7 +104,7 @@ Or with overrides:
   --state-root ~/.mimiclaw
 ```
 
-## Smoke Test (Reusable for CI)
+## Validation Flows (Reusable for CI)
 
 Install Python test dependency:
 
@@ -108,7 +114,7 @@ python3 -m venv .tmp/host-venv
 python -m pip install websockets
 ```
 
-Run smoke (valid WS flow + malformed/non-message payload robustness):
+Run baseline smoke (valid WS flow + malformed/non-message payload robustness):
 
 ```bash
 ./scripts/host/smoke.sh
@@ -116,7 +122,7 @@ Run smoke (valid WS flow + malformed/non-message payload robustness):
 make host-smoke
 ```
 
-Run CI-equivalent flow locally (build + host regression tests + smoke):
+Run baseline CI-equivalent flow locally (build + host regression tests + keyless smoke):
 
 ```bash
 ./scripts/host/ci.sh
@@ -124,17 +130,49 @@ Run CI-equivalent flow locally (build + host regression tests + smoke):
 make host-ci
 ```
 
-Reproducible local CI sequence:
+Run required live-provider checks:
 
 ```bash
-make host-build
-ctest --test-dir build-host --output-on-failure
-PYTHON=python3 BUILD_DIR=build-host ./scripts/host/smoke.sh
+export ANTHROPIC_API_KEY=...
+export OPENAI_API_KEY=...
+
+make host-ci-live-anthropic
+make host-ci-live-openai
+# or run both sequentially
+make host-ci-live-all
 ```
 
 Failure log locations:
 - `/Users/karlchow/Desktop/code/mimiclaw/.tmp/mimiclaw-host-smoke/host.log`
 - `/Users/karlchow/Desktop/code/mimiclaw/.tmp/mimiclaw-host-smoke/config.json`
+- `/Users/karlchow/Desktop/code/mimiclaw/.tmp/mimiclaw-host-smoke-live-anthropic/host.log`
+- `/Users/karlchow/Desktop/code/mimiclaw/.tmp/mimiclaw-host-smoke-live-openai/host.log`
+
+## cloudrouter e2b Runbook
+
+Minimum Linux sequence for reproducible host readiness in a fresh sandbox:
+
+```bash
+cloudrouter start . -p e2b
+./scripts/host/install-deps-ubuntu.sh
+rm -rf build-host .tmp/host-ci-venv .tmp/mimiclaw-host-smoke .tmp/mimiclaw-host-smoke-live-*
+
+make host-ci
+
+# Required live validation
+export ANTHROPIC_API_KEY=...
+export OPENAI_API_KEY=...
+make host-ci-live-all
+```
+
+## Common Failures And Fixes
+
+- CMake cache source mismatch (`The source ... does not match the source ... used to generate cache`):
+  `rm -rf build-host .tmp/host-ci-venv`
+- Missing `python3 -m venv` support:
+  rerun `./scripts/host/install-deps-ubuntu.sh` (installs `python3-venv`)
+- Live validation exits for missing API keys:
+  set `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` before running `make host-ci-live-*`
 
 ## WebSocket Protocol (phase-1)
 
