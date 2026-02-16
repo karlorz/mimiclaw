@@ -108,7 +108,7 @@ python3 -m venv .tmp/host-venv
 python -m pip install websockets
 ```
 
-Run smoke:
+Run smoke (valid WS flow + malformed/non-message payload robustness):
 
 ```bash
 ./scripts/host/smoke.sh
@@ -116,13 +116,25 @@ Run smoke:
 make host-smoke
 ```
 
-Run CI-equivalent flow locally (build + smoke):
+Run CI-equivalent flow locally (build + host regression tests + smoke):
 
 ```bash
 ./scripts/host/ci.sh
 # or
 make host-ci
 ```
+
+Reproducible local CI sequence:
+
+```bash
+make host-build
+ctest --test-dir build-host --output-on-failure
+PYTHON=python3 BUILD_DIR=build-host ./scripts/host/smoke.sh
+```
+
+Failure log locations:
+- `/Users/karlchow/Desktop/code/mimiclaw/.tmp/mimiclaw-host-smoke/host.log`
+- `/Users/karlchow/Desktop/code/mimiclaw/.tmp/mimiclaw-host-smoke/config.json`
 
 ## WebSocket Protocol (phase-1)
 

@@ -1,0 +1,41 @@
+name: Firmware Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: firmware (esp32s3)
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp/firmware-ci
+          . $IDF_PATH/export.sh
+          idf.py set-target esp32s3
+          idf.py build 2>&1 | tee .tmp/firmware-ci/build.log
+
+      - name: Upload firmware build artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-build-failure
+          path: |
+            .tmp/firmware-ci/build.log
+            build/**/*.bin
+            build/**/*.elf
+            build/**/*.map
+            build/log/*
+          if-no-files-found: ignore

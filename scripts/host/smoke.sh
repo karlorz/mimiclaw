@@ -119,4 +119,19 @@ if [[ ! -f "${STATE_ROOT}/sessions/tg_ci_smoke.jsonl" ]]; then
   exit 1
 fi
 
-echo "host smoke passed (ws=${WS_BIND}:${WS_PORT})"
+if ! "${PYTHON}" "${ROOT_DIR}/scripts/host/smoke_invalid_payload.py" \
+  --url "ws://${WS_BIND}:${WS_PORT}" \
+  --pid "${HOST_PID}" \
+  --timeout 15; then
+  echo "invalid payload robustness check failed; host log tail:" >&2
+  tail -n 200 "${LOG_PATH}" >&2 || true
+  exit 1
+fi
+
+if ! kill -0 "${HOST_PID}" >/dev/null 2>&1; then
+  echo "host daemon exited after invalid payload check" >&2
+  tail -n 200 "${LOG_PATH}" >&2 || true
+  exit 1
+fi
+
+echo "host smoke passed (valid + invalid ws frames, ws=${WS_BIND}:${WS_PORT})"
