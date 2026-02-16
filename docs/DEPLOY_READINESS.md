@@ -58,11 +58,28 @@ Record evidence for each gate in the table below.
 
 | Date (UTC) | Board | Commit SHA | Gate | Provider | Command / Log Snippet | Result |
 |---|---|---|---|---|---|---|
-| YYYY-MM-DD | e.g. ESP32-S3 DevKitC-1 | `<sha>` | host-baseline | n/a | `make host-ci` + key log lines | PASS/FAIL |
-| YYYY-MM-DD | e.g. ESP32-S3 DevKitC-1 | `<sha>` | host-live | anthropic | `make host-ci-live-anthropic` + response snippet | PASS/FAIL |
-| YYYY-MM-DD | e.g. ESP32-S3 DevKitC-1 | `<sha>` | host-live | openai | `make host-ci-live-openai` + response snippet | PASS/FAIL |
-| YYYY-MM-DD | e.g. ESP32-S3 DevKitC-1 | `<sha>` | firmware-build | n/a | `make firmware-ci` + build summary | PASS/FAIL |
-| YYYY-MM-DD | e.g. ESP32-S3 DevKitC-1 | `<sha>` | device-smoke | anthropic/openai | CLI transcript + tool-use transcript | PASS/FAIL |
+| 2026-02-16T13:37:00Z | e2b Docker sandbox `cr_igi57c92` | `127b0b83812420ca17a949415358275deb6686fa` | host-baseline | n/a | `make host-ci` -> `expected session file missing: .../sessions/tg_ci_smoke.jsonl` | FAIL |
+| 2026-02-16T13:37:48Z | e2b Docker sandbox `cr_igi57c92` | `127b0b83812420ca17a949415358275deb6686fa` | host-live | anthropic | `make host-ci-live-anthropic` -> `missing API key for live provider 'anthropic'` | FAIL |
+| 2026-02-16T13:37:48Z | e2b Docker sandbox `cr_igi57c92` | `127b0b83812420ca17a949415358275deb6686fa` | host-live | openai | `make host-ci-live-openai` -> `missing API key for live provider 'openai'` | FAIL |
+| 2026-02-16T13:38:34Z | local shell (no ESP-IDF env) | `127b0b83812420ca17a949415358275deb6686fa` | firmware-build | n/a | `make firmware-ci` -> `IDF_PATH is not set` | FAIL |
+| 2026-02-16T13:41:06Z | real ESP32-S3 not connected | `127b0b83812420ca17a949415358275deb6686fa` | device-smoke | anthropic/openai | Device validation not executed in this run (no board attached) | BLOCKED (FAIL) |
+
+## Additional Gate Observations (2026-02-16 UTC)
+
+- Candidate SHA is on `origin/main`: `127b0b83812420ca17a949415358275deb6686fa`.
+- Manual workflow trigger check failed:
+  - `gh workflow run .github/workflows/host-live-validation.yml --ref main`
+  - Result: HTTP 404 workflow not found on default branch.
+- Existing workflows on default branch:
+  - `AI Code Review`
+  - `Build & Release`
+- Commit status for candidate SHA:
+  - `gh api repos/memovai/mimiclaw/commits/127b0b83812420ca17a949415358275deb6686fa/status`
+  - Result: `state=pending`, `total_count=0` (no status checks recorded).
+- Secret hygiene spot checks:
+  - `main/mimi_secrets.h` is not tracked and not present in working tree.
+  - `main/mimi_secrets.h.example` is tracked.
+  - No obvious API key literals found by quick tracked-file regex scan.
 
 ## Release Decision Rule
 
