@@ -40,4 +40,10 @@ jobs:
           path: |
             .tmp/mimiclaw-host-smoke/host.log
             .tmp/mimiclaw-host-smoke/config.json
+            .tmp/mimiclaw-host-smoke-auth-deny/host.log
+            .tmp/mimiclaw-host-smoke-auth-deny/config.json
+            .tmp/mimiclaw-host-smoke-auth-allow/host.log
+            .tmp/mimiclaw-host-smoke-auth-allow/config.json
+            .tmp/mimiclaw-host-smoke-scrub/scrub.log
+            .tmp/mimiclaw-host-smoke-scrub/sessions/*.jsonl
           if-no-files-found: ignore

@@ -172,7 +172,7 @@ make host-ci-live-openai
 make host-ci-live-all
 ```
 
-Baseline host CI smoke/regression checks do not require external LLM API keys.
+Baseline host CI smoke/regression checks (including scrub CLI validation) do not require external LLM API keys.
 Live provider validation is available in the manual GitHub Actions workflow `.github/workflows/host-live-validation.yml`.
 
 Firmware CI-equivalent build (requires ESP-IDF environment):

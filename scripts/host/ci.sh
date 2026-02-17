@@ -11,7 +11,7 @@ usage() {
 Usage: scripts/host/ci.sh [--live-provider anthropic|openai]
 
 Default mode:
-  Baseline host CI (build + ctest + keyless smoke)
+  Baseline host CI (build + ctest + keyless smoke + ws auth checks + scrub CLI check)
 
 Live mode:
   Build + ctest + live provider smoke (requires API key env)
@@ -102,6 +102,39 @@ if [[ -z "${LIVE_PROVIDER}" ]]; then
   WS_AUTH_TOKEN="${WS_AUTH_TOKEN:-ci_ws_auth_token}" \
   SMOKE_AUTH_TOKEN="${WS_AUTH_TOKEN:-ci_ws_auth_token}" \
   "${ROOT_DIR}/scripts/host/smoke.sh"
+
+  echo "running session scrub cli check (--scrub-sessions)"
+  SCRUB_STATE_ROOT="${SCRUB_STATE_ROOT:-${ROOT_DIR}/.tmp/mimiclaw-host-smoke-scrub}"
+  rm -rf "${SCRUB_STATE_ROOT}"
+  mkdir -p "${SCRUB_STATE_ROOT}/config" "${SCRUB_STATE_ROOT}/memory" "${SCRUB_STATE_ROOT}/sessions"
+
+  cat > "${SCRUB_STATE_ROOT}/sessions/tg_ci_scrub.jsonl" <<'EOF'
+{"role":"user","content":"OPENAI_API_KEY=sk-ci-scrub-123","ts":1}
+{"role":"assistant","content":"Search key:\nsk-ci-scrub-456","ts":2}
+{"role":"assistant","content":"safe text","ts":3}
+EOF
+
+  "${BUILD_DIR}/mimiclaw-host" \
+    --state-root "${SCRUB_STATE_ROOT}" \
+    --scrub-sessions \
+    > "${SCRUB_STATE_ROOT}/scrub.log" 2>&1
+
+  SCRUBBED_FILE="${SCRUB_STATE_ROOT}/sessions/tg_ci_scrub.jsonl"
+  if grep -q "sk-ci-scrub-123" "${SCRUBBED_FILE}" || grep -q "sk-ci-scrub-456" "${SCRUBBED_FILE}"; then
+    echo "scrub cli check failed: raw secret-like value still present" >&2
+    tail -n 200 "${SCRUB_STATE_ROOT}/scrub.log" >&2 || true
+    exit 1
+  fi
+  if ! grep -qF "[REDACTED_SECRET]" "${SCRUBBED_FILE}"; then
+    echo "scrub cli check failed: redaction placeholder missing" >&2
+    tail -n 200 "${SCRUB_STATE_ROOT}/scrub.log" >&2 || true
+    exit 1
+  fi
+  if ! grep -q "Scrub summary" "${SCRUB_STATE_ROOT}/scrub.log"; then
+    echo "scrub cli check failed: scrub summary log missing" >&2
+    tail -n 200 "${SCRUB_STATE_ROOT}/scrub.log" >&2 || true
+    exit 1
+  fi
 
   exit 0
 fi

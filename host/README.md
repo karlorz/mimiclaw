@@ -217,7 +217,7 @@ Run baseline smoke (valid WS flow + malformed/non-message payload robustness):
 make host-smoke
 ```
 
-Run baseline CI-equivalent flow locally (build + ctest + keyless smoke + WS auth deny/allow smoke):
+Run baseline CI-equivalent flow locally (build + ctest + keyless smoke + WS auth deny/allow smoke + scrub CLI check):
 
 ```bash
 ./scripts/host/ci.sh
