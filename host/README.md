@@ -150,6 +150,22 @@ Or with overrides:
   --state-root ~/.mimiclaw
 ```
 
+macOS live boot/debug entries:
+
+```bash
+# Boot with deterministic live paths:
+#   state  -> .tmp/mimiclaw-host-live
+#   config -> .tmp/mimiclaw-host-live/config.json
+#   log    -> .tmp/mimiclaw-host-live/host.log
+make host-boot-live
+
+# Debug on macOS with LLDB (auto-runs process)
+make host-debug-live-macos
+
+# Follow live log
+make host-log-live
+```
+
 ## Production Security Profile
 
 1. Set `security.ws_require_token=true` and a strong `security.ws_token`.

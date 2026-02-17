@@ -142,6 +142,11 @@ Run:
 
 ```bash
 /Users/karlchow/Desktop/code/mimiclaw/build-host/mimiclaw-host
+
+# macOS live boot/debug entries
+make host-boot-live
+make host-debug-live-macos
+make host-log-live
 ```
 
 Smoke test:

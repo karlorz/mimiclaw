@@ -1,4 +1,4 @@
-.PHONY: host-build host-smoke host-run host-ci host-ci-live-anthropic host-ci-live-openai host-ci-live-all firmware-ci ci-all
+.PHONY: host-build host-smoke host-run host-boot-live host-debug-live-macos host-log-live host-ci host-ci-live-anthropic host-ci-live-openai host-ci-live-all firmware-ci ci-all
 
 BUILD_HOST_DIR ?= build-host
 
@@ -10,6 +10,15 @@ host-smoke: host-build
 
 host-run: host-build
 	./$(BUILD_HOST_DIR)/mimiclaw-host --config $$HOME/.mimiclaw/config.json
+
+host-boot-live: host-build
+	BUILD_DIR=$(BUILD_HOST_DIR) ./scripts/host/boot-live.sh
+
+host-debug-live-macos: host-build
+	BUILD_DIR=$(BUILD_HOST_DIR) ./scripts/host/debug-live-macos.sh
+
+host-log-live:
+	tail -f ./.tmp/mimiclaw-host-live/host.log
 
 host-ci:
 	BUILD_DIR=$(BUILD_HOST_DIR) ./scripts/host/ci.sh
