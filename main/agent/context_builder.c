@@ -23,6 +23,11 @@ static const char *TAG = "context";
 #define MIMI_SKILLS_PROMPT_PER_SKILL 1200
 #define MIMI_SKILLS_PROMPT_TOTAL     4096
 
+typedef enum {
+    MIMI_RUNTIME_PROFILE_FIRMWARE = 0,
+    MIMI_RUNTIME_PROFILE_HOST = 1,
+} mimi_runtime_profile_t;
+
 static size_t append_fmt(char *buf, size_t size, size_t off, const char *fmt, ...)
 {
     if (!buf || size == 0 || !fmt) return off;
@@ -130,17 +135,31 @@ static size_t append_skills_prompt(char *buf, size_t size, size_t off)
     return off;
 }
 
-esp_err_t context_build_system_prompt(char *buf, size_t size)
+static mimi_runtime_profile_t context_runtime_profile(void)
 {
-    if (!buf || size == 0) return ESP_ERR_INVALID_ARG;
+#ifdef MIMI_HOST_BUILD
+    return MIMI_RUNTIME_PROFILE_HOST;
+#else
+    return MIMI_RUNTIME_PROFILE_FIRMWARE;
+#endif
+}
 
-    buf[0] = '\0';
-    size_t off = 0;
+static size_t append_runtime_intro(char *buf, size_t size, size_t off, mimi_runtime_profile_t profile)
+{
+    off = append_fmt(buf, size, off, "# MimiClaw\n\n");
+
+    if (profile == MIMI_RUNTIME_PROFILE_HOST) {
+        off = append_fmt(buf, size, off,
+            "You are MimiClaw, a personal AI assistant running as a Linux/macOS host daemon.\n"
+            "You communicate through Telegram and WebSocket.\n"
+            "Tool and memory paths remain under /spiffs/... as virtual compatibility paths in this runtime.\n\n");
+    } else {
+        off = append_fmt(buf, size, off,
+            "You are MimiClaw, a personal AI assistant running on an ESP32-S3 device.\n"
+            "You communicate through Telegram and WebSocket.\n\n");
+    }
 
     off = append_fmt(buf, size, off,
-        "# MimiClaw\n\n"
-        "You are MimiClaw, a personal AI assistant running on an ESP32-S3 device.\n"
-        "You communicate through Telegram and WebSocket.\n\n"
         "Be helpful, accurate, and concise.\n\n"
         "## Available Tools\n"
         "You have access to the following tools:\n"
@@ -165,6 +184,39 @@ esp_err_t context_build_system_prompt(char *buf, size_t size)
         "- Keep MEMORY.md concise and organized - summarize, don't dump raw conversation.\n"
         "- You should proactively save memory without being asked. If the user tells you their name, preferences, or important facts, persist them immediately.\n");
 
+    return off;
+}
+
+static size_t append_runtime_mode_lock(char *buf, size_t size, size_t off, mimi_runtime_profile_t profile)
+{
+    off = append_fmt(buf, size, off, "\n## Runtime Mode\n\n");
+
+    if (profile == MIMI_RUNTIME_PROFILE_HOST) {
+        off = append_fmt(buf, size, off,
+            "- Active runtime: Linux/macOS host daemon build.\n"
+            "- Channels: Telegram and WebSocket.\n"
+            "- /spiffs/... paths are virtual compatibility paths in this runtime.\n"
+            "- Do not claim to be running on ESP32 hardware in this runtime.\n");
+    } else {
+        off = append_fmt(buf, size, off,
+            "- Active runtime: ESP32-S3 firmware build.\n"
+            "- Channels: Telegram and WebSocket.\n"
+            "- /spiffs/... paths refer to on-device SPIFFS storage.\n");
+    }
+
+    return off;
+}
+
+esp_err_t context_build_system_prompt(char *buf, size_t size)
+{
+    if (!buf || size == 0) return ESP_ERR_INVALID_ARG;
+
+    buf[0] = '\0';
+    size_t off = 0;
+    mimi_runtime_profile_t profile = context_runtime_profile();
+
+    off = append_runtime_intro(buf, size, off, profile);
+
     off = append_file(buf, size, off, MIMI_SOUL_FILE, "Personality");
     off = append_file(buf, size, off, MIMI_USER_FILE, "User Info");
     off = append_file(buf, size, off, MIMI_AGENTS_FILE, "Agent Instructions");
@@ -181,6 +233,8 @@ esp_err_t context_build_system_prompt(char *buf, size_t size)
     if (memory_read_recent(recent_buf, sizeof(recent_buf), 3) == ESP_OK && recent_buf[0]) {
         off = append_fmt(buf, size, off, "\n## Recent Notes\n\n%s\n", recent_buf);
     }
+
+    off = append_runtime_mode_lock(buf, size, off, profile);
 
     ESP_LOGI(TAG, "System prompt built: %d bytes", (int)off);
     return ESP_OK;

@@ -15,6 +15,12 @@ Out of scope in this phase:
 - OTA manager
 - Executable skills or dynamic tool registration
 
+## Prompt Runtime Identity
+
+- Prompt identity is auto-selected by build target. Host binaries (`MIMI_HOST_BUILD`) identify runtime as a Linux/macOS host daemon.
+- Tool and memory examples keep `/spiffs/...` paths on host because they are virtual compatibility paths mapped into the host state root.
+- In host mode, responses to prompts like "what can you do" should describe host-daemon capabilities and channels, and should not claim to be running on ESP32 hardware.
+
 ## Dependencies
 
 ### macOS (Homebrew)

@@ -84,3 +84,40 @@ target_include_directories(path_map_host_test PRIVATE
 )
 
 add_test(NAME path_map_host_test COMMAND path_map_host_test)
+
+add_executable(context_variant_host_test
+    tests/context_variant_host_test.c
+    platform/path_map_host.c
+    platform/platform_kv_host.c
+    platform/platform_types_host.c
+    ../main/agent/context_builder.c
+    ../main/skills/skills_loader.c
+    ../main/memory/memory_store.c
+    ../main/tools/tool_registry.c
+    ../main/tools/tool_web_search.c
+    ../main/tools/tool_get_time.c
+    ../main/tools/tool_files.c
+)
+
+target_compile_definitions(context_variant_host_test PRIVATE MIMI_HOST_BUILD=1)
+
+target_include_directories(context_variant_host_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../main
+    ${CMAKE_CURRENT_SOURCE_DIR}/compat
+    ${CJSON_INCLUDE_DIRS}
+)
+
+target_compile_options(context_variant_host_test PRIVATE
+    ${CJSON_CFLAGS_OTHER}
+)
+
+target_link_directories(context_variant_host_test PRIVATE
+    ${CJSON_LIBRARY_DIRS}
+)
+
+target_link_libraries(context_variant_host_test PRIVATE
+    ${CJSON_LIBRARIES}
+)
+
+add_test(NAME context_variant_host_test COMMAND context_variant_host_test)
