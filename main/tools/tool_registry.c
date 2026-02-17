@@ -141,6 +141,18 @@ const char *tool_registry_get_tools_json(void)
     return s_tools_json;
 }
 
+size_t tool_registry_copy_names(const char **out_names, size_t max_out)
+{
+    if (!out_names || max_out == 0) return 0;
+
+    size_t count = 0;
+    for (int i = 0; i < s_tool_count && count < max_out; i++) {
+        out_names[count++] = s_tools[i].name;
+    }
+
+    return count;
+}
+
 esp_err_t tool_registry_execute(const char *name, const char *input_json,
                                 char *output, size_t output_size)
 {

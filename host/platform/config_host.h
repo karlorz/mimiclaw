@@ -2,7 +2,11 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "platform/platform_types.h"
+
+#define HOST_CONFIG_MAX_SKILLS 16
+#define HOST_CONFIG_MAX_SKILL_PATH 256
 
 typedef struct {
     char config_path[1024];
@@ -17,6 +21,19 @@ typedef struct {
     char timezone[128];
     char proxy_host[128];
     uint16_t proxy_port;
+
+    bool channel_telegram_enabled;
+    char tg_token[256];
+
+    bool ws_require_token;
+    char ws_token[256];
+    char telegram_allowlist[512];
+
+    bool skills_enabled;
+    char skills_dir[1024];
+    uint16_t skills_max_loaded;
+    char skills_list[HOST_CONFIG_MAX_SKILLS][HOST_CONFIG_MAX_SKILL_PATH];
+    size_t skills_count;
 } host_config_t;
 
 mimi_err_t host_config_load(int argc, char **argv);

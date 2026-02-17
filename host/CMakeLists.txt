@@ -16,6 +16,7 @@ pkg_check_modules(CJSON REQUIRED libcjson)
 add_executable(mimiclaw-host
     main_host.c
 
+    channel/telegram_host.c
     platform/config_host.c
     platform/path_map_host.c
     platform/platform_http_host.c
@@ -29,6 +30,7 @@ add_executable(mimiclaw-host
 
     ../main/agent/agent_loop.c
     ../main/agent/context_builder.c
+    ../main/skills/skills_loader.c
     ../main/memory/memory_store.c
     ../main/memory/session_mgr.c
     ../main/llm/llm_proxy.c

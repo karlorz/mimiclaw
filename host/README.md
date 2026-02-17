@@ -1,17 +1,19 @@
 # MimiClaw Host Runtime (Linux/macOS)
 
-This is the phase-1 native host daemon for MimiClaw.
+This is the native host daemon for MimiClaw mini service mode.
 
-Scope in this phase:
-- WebSocket ingress only
+Current scope:
+- WebSocket + Telegram channels
 - Shared core logic from `main/` (agent loop, tools, memory/session handling)
+- Optional production security profile (WS bearer token + Telegram allowlist)
+- Config-listed `SKILL.md` loading (prompt/policy only; no script execution)
 - Strict file sandbox via virtual `/spiffs/...` mapping into `~/.mimiclaw`
 
 Out of scope in this phase:
 - WiFi manager
 - Serial CLI
-- Telegram poller/sender
 - OTA manager
+- Executable skills or dynamic tool registration
 
 ## Dependencies
 
@@ -49,24 +51,46 @@ rm -rf build-host .tmp/host-ci-venv
 Default config file:
 - `~/.mimiclaw/config.json`
 
-Example:
+Start from:
+- `host/config.json.example` (strict production profile template)
+
+Example config (backward-compatible defaults):
 
 ```json
 {
-  "api_key": "sk-ant-api03-...",
-  "model": "claude-opus-4-5",
-  "model_provider": "anthropic",
-  "api_base": "",
-  "search_key": "BSA...",
-  "ws_bind": "127.0.0.1",
-  "ws_port": 18789,
-  "state_root": "~/.mimiclaw",
+  "llm": {
+    "api_key": "",
+    "model": "claude-opus-4-5",
+    "provider": "anthropic",
+    "api_base": ""
+  },
+  "ws": {
+    "bind": "127.0.0.1",
+    "port": 18789
+  },
+  "state": {
+    "root": "~/.mimiclaw"
+  },
+  "channels": {
+    "telegram_enabled": false
+  },
+  "telegram": {
+    "bot_token": ""
+  },
+  "security": {
+    "ws_require_token": false,
+    "ws_token": "",
+    "telegram_allowlist": ""
+  },
+  "skills": {
+    "enabled": false,
+    "dir": "~/.mimiclaw/skills",
+    "max_loaded": 4,
+    "list": []
+  },
   "timezone": "PST8PDT,M3.2.0,M11.1.0"
 }
 ```
-
-You can also start from:
-- `host/config.json.example`
 
 Environment overrides (`.env` in current working directory is auto-loaded):
 - `MIMI_API_KEY`
@@ -82,6 +106,15 @@ Environment overrides (`.env` in current working directory is auto-loaded):
 - `MIMI_WS_PORT`
 - `MIMI_STATE_ROOT`
 - `MIMI_TIMEZONE`
+- `MIMI_TG_TOKEN`
+- `MIMI_CHANNEL_TELEGRAM_ENABLED`
+- `MIMI_WS_REQUIRE_TOKEN`
+- `MIMI_WS_TOKEN`
+- `MIMI_TG_ALLOWLIST`
+- `MIMI_SKILLS_ENABLED`
+- `MIMI_SKILLS_DIR`
+- `MIMI_SKILLS_MAX_LOADED`
+- `MIMI_SKILLS_LIST` (comma-separated)
 - `MIMI_ENV_FILE` (optional custom `.env` path)
 
 CLI flags:
@@ -111,6 +144,16 @@ Or with overrides:
   --state-root ~/.mimiclaw
 ```
 
+## Production Security Profile
+
+1. Set `security.ws_require_token=true` and a strong `security.ws_token`.
+2. Configure `security.telegram_allowlist` with approved chat/user IDs.
+3. Set `channels.telegram_enabled=true` only when `telegram.bot_token` is configured.
+4. Keep tokens in environment/secret manager; do not commit them to source control.
+
+WebSocket auth contract when required:
+- Handshake must include `Authorization: Bearer <token>`.
+
 ## Validation Flows (Reusable for CI)
 
 Install Python test dependency:
@@ -129,7 +172,7 @@ Run baseline smoke (valid WS flow + malformed/non-message payload robustness):
 make host-smoke
 ```
 
-Run baseline CI-equivalent flow locally (build + host regression tests + keyless smoke):
+Run baseline CI-equivalent flow locally (build + ctest + keyless smoke + WS auth deny/allow smoke):
 
 ```bash
 ./scripts/host/ci.sh
@@ -181,7 +224,7 @@ make host-ci-live-all
 - Live validation exits for missing API keys:
   set `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` before running `make host-ci-live-*`
 
-## WebSocket Protocol (phase-1)
+## WebSocket Protocol
 
 Inbound frame:
 ```json
@@ -192,6 +235,23 @@ Outbound frame:
 ```json
 {"type":"response","content":"...","chat_id":"demo"}
 ```
+
+When WS auth is enabled, include bearer auth in the handshake:
+- `Authorization: Bearer <token>`
+
+## Telegram Ingress Policy
+
+- If `security.telegram_allowlist` is empty, all Telegram senders are accepted.
+- If set, only matching chat IDs or user IDs are accepted.
+- Non-allowlisted senders are rejected and logged with `allowlist-deny` markers.
+
+## Skills Contract
+
+- Load only config-listed `SKILL.md` files from configured `skills.dir`.
+- Parse frontmatter keys: `name`, `description`, `required_tools`.
+- Skip invalid/missing skills or skills requiring unavailable tools.
+- Inject loaded skill summaries/instructions into the system prompt.
+- No script execution, shelling out, or dynamic tool registration.
 
 ## Sandbox Mapping
 

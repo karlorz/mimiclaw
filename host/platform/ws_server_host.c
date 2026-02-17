@@ -30,6 +30,42 @@ typedef struct {
 static ws_client_t s_clients[MIMI_WS_MAX_CLIENTS];
 static pthread_mutex_t s_clients_mu = PTHREAD_MUTEX_INITIALIZER;
 
+static bool ws_auth_validate(struct lws *wsi)
+{
+    const host_config_t *cfg = host_config_get();
+    if (!cfg || !cfg->ws_require_token) {
+        return true;
+    }
+
+    if (!cfg->ws_token[0]) {
+        ESP_LOGW(TAG, "auth-deny reason=ws-token-missing");
+        return false;
+    }
+
+    char auth[512];
+    memset(auth, 0, sizeof(auth));
+    int got = lws_hdr_copy(wsi, auth, sizeof(auth), WSI_TOKEN_HTTP_AUTHORIZATION);
+    if (got <= 0) {
+        ESP_LOGW(TAG, "auth-deny reason=missing-authorization");
+        return false;
+    }
+
+    const char *prefix = "Bearer ";
+    size_t prefix_len = strlen(prefix);
+    if (strncmp(auth, prefix, prefix_len) != 0) {
+        ESP_LOGW(TAG, "auth-deny reason=invalid-authorization-scheme");
+        return false;
+    }
+
+    const char *token = auth + prefix_len;
+    if (!token[0] || strcmp(token, cfg->ws_token) != 0) {
+        ESP_LOGW(TAG, "auth-deny reason=token-mismatch");
+        return false;
+    }
+
+    return true;
+}
+
 static ws_client_t *find_client_by_wsi(struct lws *wsi)
 {
     for (int i = 0; i < MIMI_WS_MAX_CLIENTS; i++) {
@@ -89,6 +125,13 @@ static int ws_callback(struct lws *wsi,
     (void)user;
 
     switch (reason) {
+        case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION: {
+            if (!ws_auth_validate(wsi)) {
+                return 1;
+            }
+            break;
+        }
+
         case LWS_CALLBACK_ESTABLISHED: {
             pthread_mutex_lock(&s_clients_mu);
             add_client_locked(wsi);

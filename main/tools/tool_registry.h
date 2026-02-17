@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include <stddef.h>
+#include <stdbool.h>
 
 typedef struct {
     const char *name;
@@ -20,6 +21,12 @@ esp_err_t tool_registry_init(void);
  * Returns NULL if no tools are registered.
  */
 const char *tool_registry_get_tools_json(void);
+
+/**
+ * Copy registered tool names into caller-provided array.
+ * Returns number of names copied.
+ */
+size_t tool_registry_copy_names(const char **out_names, size_t max_out);
 
 /**
  * Execute a tool by name.

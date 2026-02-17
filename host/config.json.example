@@ -1,11 +1,38 @@
 {
-  "api_key": "",
-  "model": "claude-opus-4-5",
-  "model_provider": "anthropic",
-  "api_base": "",
-  "search_key": "",
-  "ws_bind": "127.0.0.1",
-  "ws_port": 18789,
-  "state_root": "~/.mimiclaw",
+  "llm": {
+    "api_key": "",
+    "model": "claude-opus-4-5",
+    "provider": "anthropic",
+    "api_base": ""
+  },
+  "search": {
+    "api_key": ""
+  },
+  "ws": {
+    "bind": "127.0.0.1",
+    "port": 18789
+  },
+  "state": {
+    "root": "~/.mimiclaw"
+  },
+  "channels": {
+    "telegram_enabled": true
+  },
+  "telegram": {
+    "bot_token": ""
+  },
+  "security": {
+    "ws_require_token": true,
+    "ws_token": "replace-with-strong-random-token",
+    "telegram_allowlist": "123456789,987654321"
+  },
+  "skills": {
+    "enabled": true,
+    "dir": "~/.mimiclaw/skills",
+    "max_loaded": 4,
+    "list": [
+      "example/SKILL.md"
+    ]
+  },
   "timezone": "PST8PDT,M3.2.0,M11.1.0"
 }

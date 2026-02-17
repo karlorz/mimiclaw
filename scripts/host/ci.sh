@@ -81,6 +81,28 @@ python3 -m venv "${VENV_DIR}"
 if [[ -z "${LIVE_PROVIDER}" ]]; then
   echo "running baseline host smoke (keyless deterministic mode)"
   PYTHON="${VENV_DIR}/bin/python" BUILD_DIR="${BUILD_DIR}" "${ROOT_DIR}/scripts/host/smoke.sh"
+
+  echo "running ws auth deny smoke (token required, no header)"
+  PYTHON="${VENV_DIR}/bin/python" \
+  BUILD_DIR="${BUILD_DIR}" \
+  STATE_ROOT="${STATE_ROOT:-${ROOT_DIR}/.tmp/mimiclaw-host-smoke-auth-deny}" \
+  SMOKE_CLIENT="${ROOT_DIR}/scripts/host/smoke_ws_auth.py" \
+  SMOKE_EXPECT_CONNECT_FAIL=1 \
+  WS_REQUIRE_TOKEN=true \
+  WS_AUTH_TOKEN="${WS_AUTH_TOKEN:-ci_ws_auth_token}" \
+  "${ROOT_DIR}/scripts/host/smoke.sh"
+
+  echo "running ws auth allow smoke (token required, bearer header provided)"
+  PYTHON="${VENV_DIR}/bin/python" \
+  BUILD_DIR="${BUILD_DIR}" \
+  STATE_ROOT="${STATE_ROOT:-${ROOT_DIR}/.tmp/mimiclaw-host-smoke-auth-allow}" \
+  SMOKE_CLIENT="${ROOT_DIR}/scripts/host/smoke_ws_auth.py" \
+  SMOKE_CHAT_ID="${SMOKE_CHAT_ID:-ci_auth_allow}" \
+  WS_REQUIRE_TOKEN=true \
+  WS_AUTH_TOKEN="${WS_AUTH_TOKEN:-ci_ws_auth_token}" \
+  SMOKE_AUTH_TOKEN="${WS_AUTH_TOKEN:-ci_ws_auth_token}" \
+  "${ROOT_DIR}/scripts/host/smoke.sh"
+
   exit 0
 fi
 

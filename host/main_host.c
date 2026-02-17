@@ -9,6 +9,7 @@
 #include "llm/llm_proxy.h"
 #include "tools/tool_registry.h"
 #include "gateway/ws_server.h"
+#include "channel/telegram_host.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +43,8 @@ static void *outbound_dispatch_thread(void *arg)
 
         if (strcmp(msg.channel, MIMI_CHAN_WEBSOCKET) == 0) {
             ws_server_send(msg.chat_id, msg.content);
+        } else if (strcmp(msg.channel, MIMI_CHAN_TELEGRAM) == 0) {
+            telegram_host_send(msg.chat_id, msg.content);
         } else {
             ESP_LOGW(TAG, "Unsupported host channel: %s", msg.channel);
         }
@@ -82,9 +85,11 @@ int main(int argc, char **argv)
     ESP_ERROR_CHECK(llm_proxy_init());
     ESP_ERROR_CHECK(tool_registry_init());
     ESP_ERROR_CHECK(agent_loop_init());
+    ESP_ERROR_CHECK(telegram_host_init());
 
     ESP_ERROR_CHECK(agent_loop_start());
     ESP_ERROR_CHECK(ws_server_start());
+    ESP_ERROR_CHECK(telegram_host_start());
 
     pthread_t outbound_thread;
     if (pthread_create(&outbound_thread, NULL, outbound_dispatch_thread, NULL) != 0) {
@@ -94,14 +99,16 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    ESP_LOGI(TAG, "Host daemon ready. WebSocket on %s:%u",
-             cfg->ws_bind, (unsigned)cfg->ws_port);
+    ESP_LOGI(TAG, "Host daemon ready. WebSocket on %s:%u telegram=%s",
+             cfg->ws_bind, (unsigned)cfg->ws_port,
+             cfg->channel_telegram_enabled ? "enabled" : "disabled");
 
     while (s_running) {
         sleep(1);
     }
 
     ws_server_stop();
+    telegram_host_stop();
     pthread_join(outbound_thread, NULL);
     curl_global_cleanup();
 

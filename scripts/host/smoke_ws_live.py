@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import inspect
 import json
 import sys
 
@@ -96,15 +97,23 @@ async def run_once(
     content: str,
     timeout_s: float,
     disallow_fallback: str,
+    auth_token: str,
 ) -> None:
     payload = {"type": "message", "chat_id": chat_id, "content": content}
 
-    async with websockets.connect(
-        url,
-        ping_interval=None,
-        close_timeout=1.0,
-        open_timeout=timeout_s,
-    ) as ws:
+    kwargs = {
+        "ping_interval": None,
+        "close_timeout": 1.0,
+        "open_timeout": timeout_s,
+    }
+    if auth_token:
+        params = inspect.signature(websockets.connect).parameters
+        header_key = "additional_headers" if "additional_headers" in params else "extra_headers"
+        kwargs[header_key] = [("Authorization", f"Bearer {auth_token}")]
+
+    connect_ctx = websockets.connect(url, **kwargs)
+
+    async with connect_ctx as ws:
         await ws.send(json.dumps(payload))
         await expect_live_response(ws, chat_id, timeout_s, disallow_fallback)
 
@@ -115,6 +124,7 @@ async def run(
     content: str,
     timeout_s: float,
     disallow_fallback: str,
+    auth_token: str,
 ) -> int:
     # Retry once for transient network/provider hiccups.
     max_attempts = 2
@@ -122,7 +132,7 @@ async def run(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            await run_once(url, chat_id, content, timeout_s, disallow_fallback)
+            await run_once(url, chat_id, content, timeout_s, disallow_fallback, auth_token)
             if attempt > 1:
                 print("live smoke passed on retry", file=sys.stderr)
             return 0
@@ -148,6 +158,7 @@ def main() -> int:
     parser.add_argument("--content", default="Reply with a short live-check acknowledgement.")
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--disallow-fallback", default=FALLBACK_ERROR)
+    parser.add_argument("--auth-token", default="")
     args = parser.parse_args()
 
     try:
@@ -158,6 +169,7 @@ def main() -> int:
                 args.content,
                 args.timeout,
                 args.disallow_fallback,
+                args.auth_token,
             )
         )
     except Exception as exc:

@@ -84,6 +84,8 @@
 #define MIMI_MEMORY_FILE             "/spiffs/memory/MEMORY.md"
 #define MIMI_SOUL_FILE               "/spiffs/config/SOUL.md"
 #define MIMI_USER_FILE               "/spiffs/config/USER.md"
+#define MIMI_AGENTS_FILE             "/spiffs/config/AGENTS.md"
+#define MIMI_TOOLS_FILE              "/spiffs/config/TOOLS.md"
 #define MIMI_CONTEXT_BUF_SIZE        (16 * 1024)
 #define MIMI_SESSION_MAX_MSGS        20
 
