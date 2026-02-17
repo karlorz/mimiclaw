@@ -159,16 +159,25 @@ static void test_context_prompt_host_variant(void)
     char state_root[PATH_MAX];
     char prompt[24 * 1024];
 
+    setenv("MIMI_HOST_OS_OVERRIDE", "macOS", 1);
+
     EXPECT_EQ_INT(make_state_root(state_root, sizeof(state_root)), 0);
     EXPECT_EQ_INT(platform_paths_init(state_root), MIMI_OK);
     EXPECT_EQ_INT(memory_store_init(), ESP_OK);
     EXPECT_EQ_INT(tool_registry_init(), ESP_OK);
     EXPECT_EQ_INT(context_build_system_prompt(prompt, sizeof(prompt)), ESP_OK);
 
-    EXPECT_TRUE(strstr(prompt, "running as a Linux/macOS host daemon") != NULL);
+    EXPECT_TRUE(strstr(prompt, "running as a macOS host daemon") != NULL);
+    EXPECT_TRUE(strstr(prompt, "Active host OS: macOS.") != NULL);
+    EXPECT_TRUE(strstr(prompt, "Do not ask the user to choose OS when the active host OS is known.") != NULL);
+    EXPECT_TRUE(strstr(prompt, "Output only commands for the active host OS.") != NULL);
+    EXPECT_TRUE(strstr(prompt, "Never echo raw API keys, tokens, passwords, or secrets.") != NULL);
+    EXPECT_TRUE(strstr(prompt, "[REDACTED_SECRET]") != NULL);
     EXPECT_TRUE(strstr(prompt, "/spiffs/") != NULL);
     EXPECT_TRUE(strstr(prompt, "running on an ESP32-S3 device") == NULL);
+    EXPECT_TRUE(strstr(prompt, "Linux/macOS host daemon") == NULL);
 
+    unsetenv("MIMI_HOST_OS_OVERRIDE");
     remove_state_root(state_root);
 }
 

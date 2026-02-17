@@ -4,10 +4,12 @@
 #include "bus/message_bus.h"
 #include "llm/llm_proxy.h"
 #include "memory/session_mgr.h"
+#include "security/secret_redaction.h"
 #include "tools/tool_registry.h"
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -18,6 +20,31 @@
 static const char *TAG = "agent";
 
 #define TOOL_OUTPUT_SIZE  (8 * 1024)
+
+static char *redact_copy_for_role(const char *role, const char *input)
+{
+    if (!input) return NULL;
+
+    size_t cap = secret_redaction_max_output(strlen(input));
+    if (cap == SIZE_MAX) return NULL;
+
+    char *out = heap_caps_calloc(1, cap, MALLOC_CAP_SPIRAM);
+    if (!out) return NULL;
+
+    secret_redaction_result_t result = {0};
+    if (secret_redact_text(input, out, cap, &result) != ESP_OK) {
+        free(out);
+        return NULL;
+    }
+
+    if (result.replacement_count > 0) {
+        ESP_LOGW(TAG, "secret-redaction applied role=%s replacements=%u",
+                 role ? role : "unknown",
+                 (unsigned)result.replacement_count);
+    }
+
+    return out;
+}
 
 /* Build the assistant content array from llm_response_t for the messages history.
  * Returns a cJSON array with text and tool_use blocks. */
@@ -113,10 +140,27 @@ static void agent_loop_task(void *arg)
         cJSON *messages = cJSON_Parse(history_json);
         if (!messages) messages = cJSON_CreateArray();
 
+        char *redacted_user = redact_copy_for_role("user", msg.content);
+        if (!redacted_user) {
+            ESP_LOGE(TAG, "Failed to redact inbound user content");
+            cJSON_Delete(messages);
+
+            mimi_msg_t out = {0};
+            strncpy(out.channel, msg.channel, sizeof(out.channel) - 1);
+            strncpy(out.chat_id, msg.chat_id, sizeof(out.chat_id) - 1);
+            out.content = strdup("Sorry, I encountered an error.");
+            if (out.content) {
+                session_append(msg.chat_id, "assistant", out.content);
+                message_bus_push_outbound(&out);
+            }
+            free(msg.content);
+            continue;
+        }
+
         /* 3. Append current user message */
         cJSON *user_msg = cJSON_CreateObject();
         cJSON_AddStringToObject(user_msg, "role", "user");
-        cJSON_AddStringToObject(user_msg, "content", msg.content);
+        cJSON_AddStringToObject(user_msg, "content", redacted_user);
         cJSON_AddItemToArray(messages, user_msg);
 
         /* 4. ReAct loop */
@@ -181,11 +225,15 @@ static void agent_loop_task(void *arg)
 
         /* 5. Send response */
         if (final_text && final_text[0]) {
-            /* Save to session (only user text + final assistant text) */
-            session_append(msg.chat_id, "user", msg.content);
+            char *redacted_final = redact_copy_for_role("assistant", final_text);
+            free(final_text);
+            final_text = redacted_final;
+        }
+
+        if (final_text && final_text[0]) {
+            session_append(msg.chat_id, "user", redacted_user);
             session_append(msg.chat_id, "assistant", final_text);
 
-            /* Push response to outbound */
             mimi_msg_t out = {0};
             strncpy(out.channel, msg.channel, sizeof(out.channel) - 1);
             strncpy(out.chat_id, msg.chat_id, sizeof(out.chat_id) - 1);
@@ -200,11 +248,13 @@ static void agent_loop_task(void *arg)
             out.content = strdup("Sorry, I encountered an error.");
             if (out.content) {
                 /* Persist fallback assistant text so failed turns are still recoverable. */
-                session_append(msg.chat_id, "user", msg.content);
+                session_append(msg.chat_id, "user", redacted_user);
                 session_append(msg.chat_id, "assistant", out.content);
                 message_bus_push_outbound(&out);
             }
         }
+
+        free(redacted_user);
 
         /* Free inbound message content */
         free(msg.content);

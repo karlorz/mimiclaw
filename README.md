@@ -147,6 +147,9 @@ Run:
 make host-boot-live
 make host-debug-live-macos
 make host-log-live
+
+# one-time scrub existing session history for secret-like values
+make host-scrub-live
 ```
 
 Smoke test:
@@ -189,7 +192,12 @@ Phase-1 host limitations:
 Config:
 - default file: `~/.mimiclaw/config.json`
 - env overrides (`.env` auto-loaded): `MIMI_API_KEY`/`AI_API_KEY`, `MIMI_MODEL`/`AI_MODEL`, `MIMI_MODEL_PROVIDER`/`AI_PROVIDER`, `MIMI_API_BASE`/`AI_API_BASE`, `MIMI_SEARCH_KEY`, `MIMI_WS_BIND`, `MIMI_WS_PORT`, `MIMI_STATE_ROOT`, `MIMI_TIMEZONE`
-- CLI flags: `--config`, `--ws-bind`, `--ws-port`, `--state-root`
+- CLI flags: `--config`, `--ws-bind`, `--ws-port`, `--state-root`, `--scrub-sessions`
+
+Host prompt/runtime behavior:
+- Runtime host OS is auto-detected and injected into prompt (`Active host OS: macOS|Linux|Unknown`).
+- When OS is known, setup responses must output only one OS command set and must not ask the user to choose OS.
+- Secret-like values are redacted in user/assistant session persistence and outbound assistant replies using `[REDACTED_SECRET]`.
 
 Details: see [`host/README.md`](host/README.md).
 

@@ -37,3 +37,18 @@ esp_err_t session_clear(const char *chat_id);
  * List all session files (prints to log).
  */
 void session_list(void);
+
+typedef struct {
+    size_t files_total;
+    size_t files_updated;
+    size_t lines_total;
+    size_t lines_redacted;
+    size_t replacement_count;
+    size_t file_errors;
+} session_scrub_summary_t;
+
+/**
+ * Scrub secret-like values from all session JSONL files under /spiffs/sessions.
+ * Rewrites changed files via temp-file + rename for atomic replacement.
+ */
+esp_err_t session_scrub_secrets_all(session_scrub_summary_t *summary);

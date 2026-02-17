@@ -77,6 +77,21 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    if (cfg->scrub_sessions) {
+        ESP_ERROR_CHECK(session_mgr_init());
+        session_scrub_summary_t summary = {0};
+        esp_err_t scrub_err = session_scrub_secrets_all(&summary);
+        ESP_LOGI(TAG,
+                 "Scrub summary files_total=%u files_updated=%u lines_total=%u lines_redacted=%u replacements=%u errors=%u",
+                 (unsigned)summary.files_total,
+                 (unsigned)summary.files_updated,
+                 (unsigned)summary.lines_total,
+                 (unsigned)summary.lines_redacted,
+                 (unsigned)summary.replacement_count,
+                 (unsigned)summary.file_errors);
+        return (scrub_err == ESP_OK) ? 0 : 2;
+    }
+
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     ESP_ERROR_CHECK(message_bus_init());

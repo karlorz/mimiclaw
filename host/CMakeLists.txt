@@ -33,6 +33,7 @@ add_executable(mimiclaw-host
     ../main/skills/skills_loader.c
     ../main/memory/memory_store.c
     ../main/memory/session_mgr.c
+    ../main/security/secret_redaction.c
     ../main/llm/llm_proxy.c
     ../main/tools/tool_registry.c
     ../main/tools/tool_web_search.c
@@ -121,3 +122,49 @@ target_link_libraries(context_variant_host_test PRIVATE
 )
 
 add_test(NAME context_variant_host_test COMMAND context_variant_host_test)
+
+add_executable(secret_redaction_host_test
+    tests/secret_redaction_host_test.c
+    ../main/security/secret_redaction.c
+)
+
+target_compile_definitions(secret_redaction_host_test PRIVATE MIMI_HOST_BUILD=1)
+
+target_include_directories(secret_redaction_host_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../main
+    ${CMAKE_CURRENT_SOURCE_DIR}/compat
+)
+
+add_test(NAME secret_redaction_host_test COMMAND secret_redaction_host_test)
+
+add_executable(session_scrub_host_test
+    tests/session_scrub_host_test.c
+    platform/path_map_host.c
+    platform/platform_types_host.c
+    ../main/memory/session_mgr.c
+    ../main/security/secret_redaction.c
+)
+
+target_compile_definitions(session_scrub_host_test PRIVATE MIMI_HOST_BUILD=1)
+
+target_include_directories(session_scrub_host_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../main
+    ${CMAKE_CURRENT_SOURCE_DIR}/compat
+    ${CJSON_INCLUDE_DIRS}
+)
+
+target_compile_options(session_scrub_host_test PRIVATE
+    ${CJSON_CFLAGS_OTHER}
+)
+
+target_link_directories(session_scrub_host_test PRIVATE
+    ${CJSON_LIBRARY_DIRS}
+)
+
+target_link_libraries(session_scrub_host_test PRIVATE
+    ${CJSON_LIBRARIES}
+)
+
+add_test(NAME session_scrub_host_test COMMAND session_scrub_host_test)

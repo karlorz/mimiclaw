@@ -10,6 +10,7 @@ idf_component_register(
         "skills/skills_loader.c"
         "memory/memory_store.c"
         "memory/session_mgr.c"
+        "security/secret_redaction.c"
         "gateway/ws_server.c"
         "cli/serial_cli.c"
         "ota/ota_manager.c"

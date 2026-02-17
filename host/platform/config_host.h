@@ -28,6 +28,7 @@ typedef struct {
     bool ws_require_token;
     char ws_token[256];
     char telegram_allowlist[512];
+    bool scrub_sessions;
 
     bool skills_enabled;
     char skills_dir[1024];

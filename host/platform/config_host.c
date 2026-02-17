@@ -601,6 +601,7 @@ mimi_err_t host_config_load(int argc, char **argv)
     s_cfg.ws_require_token = false;
     s_cfg.ws_token[0] = '\0';
     s_cfg.telegram_allowlist[0] = '\0';
+    s_cfg.scrub_sessions = false;
     s_cfg.skills_enabled = false;
     s_cfg.skills_max_loaded = 4;
     clear_skills_list();
@@ -622,6 +623,8 @@ mimi_err_t host_config_load(int argc, char **argv)
             arg_ws_port = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--state-root") == 0 && i + 1 < argc) {
             arg_state_root = argv[++i];
+        } else if (strcmp(argv[i], "--scrub-sessions") == 0) {
+            s_cfg.scrub_sessions = true;
         } else {
             ESP_LOGW(TAG, "Ignoring unknown arg: %s", argv[i]);
         }
@@ -678,7 +681,7 @@ mimi_err_t host_config_load(int argc, char **argv)
     }
 
     ESP_LOGI(TAG,
-             "config=%s state_root=%s ws=%s:%u ws_auth_required=%s telegram_enabled=%s telegram_allowlist=%s skills_enabled=%s skills_count=%u provider=%s model=%s api_base=%s",
+             "config=%s state_root=%s ws=%s:%u ws_auth_required=%s telegram_enabled=%s telegram_allowlist=%s scrub_sessions=%s skills_enabled=%s skills_count=%u provider=%s model=%s api_base=%s",
              s_cfg.config_path,
              s_cfg.state_root,
              s_cfg.ws_bind,
@@ -686,6 +689,7 @@ mimi_err_t host_config_load(int argc, char **argv)
              s_cfg.ws_require_token ? "true" : "false",
              s_cfg.channel_telegram_enabled ? "true" : "false",
              s_cfg.telegram_allowlist[0] ? "set" : "unset",
+             s_cfg.scrub_sessions ? "true" : "false",
              s_cfg.skills_enabled ? "true" : "false",
              (unsigned)s_cfg.skills_count,
              s_cfg.model_provider,

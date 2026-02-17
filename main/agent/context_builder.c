@@ -2,15 +2,19 @@
 #include "mimi_config.h"
 #include "memory/memory_store.h"
 #include "platform/platform_paths.h"
+#include "security/secret_redaction.h"
 #include "skills/skills_loader.h"
 #include "tools/tool_registry.h"
 
 #ifdef MIMI_HOST_BUILD
 #include "platform/config_host.h"
+#include <ctype.h>
+#include <sys/utsname.h>
 #endif
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdarg.h>
 
@@ -27,6 +31,12 @@ typedef enum {
     MIMI_RUNTIME_PROFILE_FIRMWARE = 0,
     MIMI_RUNTIME_PROFILE_HOST = 1,
 } mimi_runtime_profile_t;
+
+typedef enum {
+    MIMI_HOST_OS_UNKNOWN = 0,
+    MIMI_HOST_OS_MACOS = 1,
+    MIMI_HOST_OS_LINUX = 2,
+} mimi_host_os_t;
 
 static size_t append_fmt(char *buf, size_t size, size_t off, const char *fmt, ...)
 {
@@ -144,15 +154,85 @@ static mimi_runtime_profile_t context_runtime_profile(void)
 #endif
 }
 
-static size_t append_runtime_intro(char *buf, size_t size, size_t off, mimi_runtime_profile_t profile)
+#ifdef MIMI_HOST_BUILD
+static bool strieq_ascii(const char *a, const char *b)
+{
+    if (!a || !b) return false;
+    while (*a && *b) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return false;
+        a++;
+        b++;
+    }
+    return (*a == '\0' && *b == '\0');
+}
+
+static mimi_host_os_t parse_host_os(const char *name)
+{
+    if (!name || !name[0]) return MIMI_HOST_OS_UNKNOWN;
+
+    if (strstr(name, "Darwin") || strstr(name, "darwin")) return MIMI_HOST_OS_MACOS;
+    if (strstr(name, "Linux") || strstr(name, "linux")) return MIMI_HOST_OS_LINUX;
+    if (strieq_ascii(name, "macos")) return MIMI_HOST_OS_MACOS;
+    if (strieq_ascii(name, "linux")) return MIMI_HOST_OS_LINUX;
+    return MIMI_HOST_OS_UNKNOWN;
+}
+
+static mimi_host_os_t context_detect_host_os(void)
+{
+    const char *override = getenv("MIMI_HOST_OS_OVERRIDE");
+    mimi_host_os_t parsed = parse_host_os(override);
+    if (parsed != MIMI_HOST_OS_UNKNOWN) return parsed;
+
+    struct utsname uts;
+    if (uname(&uts) == 0) {
+        parsed = parse_host_os(uts.sysname);
+        if (parsed != MIMI_HOST_OS_UNKNOWN) return parsed;
+    }
+
+#if defined(__APPLE__)
+    return MIMI_HOST_OS_MACOS;
+#elif defined(__linux__)
+    return MIMI_HOST_OS_LINUX;
+#else
+    return MIMI_HOST_OS_UNKNOWN;
+#endif
+}
+#endif
+
+static const char *context_host_os_label(mimi_host_os_t host_os)
+{
+    if (host_os == MIMI_HOST_OS_MACOS) return "macOS";
+    if (host_os == MIMI_HOST_OS_LINUX) return "Linux";
+    return "Unknown";
+}
+
+static bool context_host_os_known(mimi_host_os_t host_os)
+{
+    return host_os != MIMI_HOST_OS_UNKNOWN;
+}
+
+static size_t append_runtime_intro(char *buf,
+                                   size_t size,
+                                   size_t off,
+                                   mimi_runtime_profile_t profile,
+                                   mimi_host_os_t host_os)
 {
     off = append_fmt(buf, size, off, "# MimiClaw\n\n");
 
     if (profile == MIMI_RUNTIME_PROFILE_HOST) {
-        off = append_fmt(buf, size, off,
-            "You are MimiClaw, a personal AI assistant running as a Linux/macOS host daemon.\n"
-            "You communicate through Telegram and WebSocket.\n"
-            "Tool and memory paths remain under /spiffs/... as virtual compatibility paths in this runtime.\n\n");
+        const char *host_os_label = context_host_os_label(host_os);
+        if (context_host_os_known(host_os)) {
+            off = append_fmt(buf, size, off,
+                "You are MimiClaw, a personal AI assistant running as a %s host daemon.\n"
+                "You communicate through Telegram and WebSocket.\n"
+                "Tool and memory paths remain under /spiffs/... as virtual compatibility paths in this runtime.\n\n",
+                host_os_label);
+        } else {
+            off = append_fmt(buf, size, off,
+                "You are MimiClaw, a personal AI assistant running as a host daemon.\n"
+                "You communicate through Telegram and WebSocket.\n"
+                "Tool and memory paths remain under /spiffs/... as virtual compatibility paths in this runtime.\n\n");
+        }
     } else {
         off = append_fmt(buf, size, off,
             "You are MimiClaw, a personal AI assistant running on an ESP32-S3 device.\n"
@@ -187,16 +267,40 @@ static size_t append_runtime_intro(char *buf, size_t size, size_t off, mimi_runt
     return off;
 }
 
-static size_t append_runtime_mode_lock(char *buf, size_t size, size_t off, mimi_runtime_profile_t profile)
+static size_t append_runtime_mode_lock(char *buf,
+                                       size_t size,
+                                       size_t off,
+                                       mimi_runtime_profile_t profile,
+                                       mimi_host_os_t host_os)
 {
     off = append_fmt(buf, size, off, "\n## Runtime Mode\n\n");
 
     if (profile == MIMI_RUNTIME_PROFILE_HOST) {
+        const char *host_os_label = context_host_os_label(host_os);
         off = append_fmt(buf, size, off,
-            "- Active runtime: Linux/macOS host daemon build.\n"
+            "- Active runtime: Host daemon build.\n"
+            "- Active host OS: %s.\n"
             "- Channels: Telegram and WebSocket.\n"
             "- /spiffs/... paths are virtual compatibility paths in this runtime.\n"
-            "- Do not claim to be running on ESP32 hardware in this runtime.\n");
+            "- Do not claim to be running on ESP32 hardware in this runtime.\n",
+            host_os_label);
+
+        if (context_host_os_known(host_os)) {
+            off = append_fmt(buf, size, off,
+                "- Do not ask the user to choose OS when the active host OS is known.\n"
+                "- Output only commands for the active host OS.\n"
+                "- Do not provide dual Linux/macOS command blocks.\n");
+        } else {
+            off = append_fmt(buf, size, off,
+                "- Active host OS is unknown. Ask once whether the host is Linux or macOS.\n"
+                "- After that, continue with one OS command set only.\n"
+                "- Do not provide dual Linux/macOS command blocks after OS is known.\n");
+        }
+
+        off = append_fmt(buf, size, off,
+            "- Never echo raw API keys, tokens, passwords, or secrets.\n"
+            "- When referencing sensitive values, use %s.\n",
+            MIMI_SECRET_REDACTION_PLACEHOLDER);
     } else {
         off = append_fmt(buf, size, off,
             "- Active runtime: ESP32-S3 firmware build.\n"
@@ -214,8 +318,12 @@ esp_err_t context_build_system_prompt(char *buf, size_t size)
     buf[0] = '\0';
     size_t off = 0;
     mimi_runtime_profile_t profile = context_runtime_profile();
+    mimi_host_os_t host_os = MIMI_HOST_OS_UNKNOWN;
+#ifdef MIMI_HOST_BUILD
+    host_os = context_detect_host_os();
+#endif
 
-    off = append_runtime_intro(buf, size, off, profile);
+    off = append_runtime_intro(buf, size, off, profile, host_os);
 
     off = append_file(buf, size, off, MIMI_SOUL_FILE, "Personality");
     off = append_file(buf, size, off, MIMI_USER_FILE, "User Info");
@@ -234,7 +342,7 @@ esp_err_t context_build_system_prompt(char *buf, size_t size)
         off = append_fmt(buf, size, off, "\n## Recent Notes\n\n%s\n", recent_buf);
     }
 
-    off = append_runtime_mode_lock(buf, size, off, profile);
+    off = append_runtime_mode_lock(buf, size, off, profile, host_os);
 
     ESP_LOGI(TAG, "System prompt built: %d bytes", (int)off);
     return ESP_OK;

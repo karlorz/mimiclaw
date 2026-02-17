@@ -17,9 +17,20 @@ Out of scope in this phase:
 
 ## Prompt Runtime Identity
 
-- Prompt identity is auto-selected by build target. Host binaries (`MIMI_HOST_BUILD`) identify runtime as a Linux/macOS host daemon.
+- Prompt identity is auto-selected by build target. Host binaries (`MIMI_HOST_BUILD`) identify runtime as host daemon mode.
+- Host runtime OS is detected at startup prompt-build time (`uname()` with compile-time fallback), and prompt includes an explicit line such as `Active host OS: macOS` or `Active host OS: Linux`.
+- When host OS is known, setup/command guidance must stay single-OS and must not ask users to choose Linux vs macOS.
+- Unknown-OS fallback: ask once for host OS, then continue with one OS command set only.
 - Tool and memory examples keep `/spiffs/...` paths on host because they are virtual compatibility paths mapped into the host state root.
 - In host mode, responses to prompts like "what can you do" should describe host-daemon capabilities and channels, and should not claim to be running on ESP32 hardware.
+
+## Secret Safety
+
+- User and assistant text are redacted before session persistence (`/spiffs/sessions/*.jsonl`).
+- Outbound assistant text is redacted before channel send.
+- Redaction placeholder is `[REDACTED_SECRET]`.
+- Raw API keys/tokens/passwords should not be echoed in replies or stored in session history.
+- Existing history can be scrubbed once with `--scrub-sessions` (see run commands below).
 
 ## Dependencies
 
@@ -128,6 +139,7 @@ CLI flags:
 - `--ws-bind <addr>`
 - `--ws-port <port>`
 - `--state-root <path>`
+- `--scrub-sessions` (run one scrub pass over session files and exit)
 
 Precedence:
 1. config file
@@ -148,6 +160,17 @@ Or with overrides:
   --ws-bind 127.0.0.1 \
   --ws-port 18789 \
   --state-root ~/.mimiclaw
+```
+
+One-time scrub and exit:
+
+```bash
+/Users/karlchow/Desktop/code/mimiclaw/build-host/mimiclaw-host \
+  --state-root ~/.mimiclaw \
+  --scrub-sessions
+
+# deterministic live-state scrub helper
+make host-scrub-live
 ```
 
 macOS live boot/debug entries:
