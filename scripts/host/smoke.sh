@@ -41,7 +41,10 @@ if ! "${PYTHON}" -c 'import websockets' >/dev/null 2>&1; then
 fi
 
 bool_json() {
-  case "${1,,}" in
+  local raw="${1:-}"
+  local normalized
+  normalized="$(printf '%s' "${raw}" | tr '[:upper:]' '[:lower:]')"
+  case "${normalized}" in
     1|true|yes|on) echo "true" ;;
     *) echo "false" ;;
   esac
